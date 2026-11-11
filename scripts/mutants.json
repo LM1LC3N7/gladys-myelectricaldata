@@ -1,0 +1,230 @@
+[
+  {
+    "name": "no daily ceiling",
+    "file": "src/app.js",
+    "from": "if ((counts[meter.key] ?? 0) >= MAX_REQUESTS_PER_DAY) throw new MedError('daily_ceiling');",
+    "to": ""
+  },
+  {
+    "name": "request not counted before it leaves",
+    "file": "src/app.js",
+    "from": "    return this.session.request(path, () => this.countRequest(meter));",
+    "to": "    return this.session.request(path);"
+  },
+  {
+    "name": "any contract 401 is a refusal",
+    "file": "src/app.js",
+    "from": "      contractsTried === this.meters.length &&\n      denied === this.meters.length &&",
+    "to": "      denied > 0 &&"
+  },
+  {
+    "name": "a data 401 taken as a refusal",
+    "file": "src/app.js",
+    "from": "if (task === 'contract' && code === 'unauthorized') result.denied = true;",
+    "to": "if (code === 'unauthorized') {\n          result.denied = true;\n          result.contractTried = true;\n        }"
+  },
+  {
+    "name": "refusal not kept",
+    "file": "src/app.js",
+    "from": "    if (!this.session || this.isRefused() || !this.meters.length) return undefined;",
+    "to": "    if (!this.session || !this.meters.length) return undefined;"
+  },
+  {
+    "name": "Test success does not lift the refusal",
+    "file": "src/app.js",
+    "from": "      if (this.refused) {\n        this.refused = undefined;\n        this.data.refused = null;\n        await this.save();\n      }",
+    "to": ""
+  },
+  {
+    "name": "new token does not lift the refusal",
+    "file": "src/app.js",
+    "from": "    if (tokenChanged && this.refused) {",
+    "to": "    if (false) {"
+  },
+  {
+    "name": "read after a pause waits the retry gap",
+    "file": "src/app.js",
+    "from": "if (this.pause && work && (last === undefined || this.pause.due > last)) due = this.pause.due;",
+    "to": "if (false) due = this.pause.due;"
+  },
+  {
+    "name": "pause not read back from /data",
+    "file": "src/app.js",
+    "from": "    if (pause && !(this.pause && this.pause.until >= pause.until)) {",
+    "to": "    if (false) {"
+  },
+  {
+    "name": "Retry-After ignored",
+    "file": "src/app.js",
+    "from": "const asked = finite(err.retryAfter) && err.retryAfter > 0 ? err.retryAfter : 0;",
+    "to": "const asked = 0;"
+  },
+  {
+    "name": "pause not doubled",
+    "file": "src/app.js",
+    "from": "const ms = Math.min(PAUSE_MAX, Math.max(asked, base * 2 ** (count - 1)));",
+    "to": "const ms = Math.min(PAUSE_MAX, Math.max(asked, base));"
+  },
+  {
+    "name": "retry sooner than 3 hours",
+    "file": "src/app.js",
+    "from": "    else due = Math.max(gap(RETRY_GAP), gap(MIN_ROUND_GAP));",
+    "to": "    else due = gap(SOON_GAP);"
+  },
+  {
+    "name": "more than 3 reads a day",
+    "file": "src/app.js",
+    "from": "    else if (rounds >= ROUNDS_PER_DAY) due = tomorrow;",
+    "to": ""
+  },
+  {
+    "name": "restart reads at once",
+    "file": "src/app.js",
+    "from": "    else if (this.storeState !== 'ok') last = mono;",
+    "to": ""
+  },
+  {
+    "name": "last read of /data ignored",
+    "file": "src/app.js",
+    "from": "      last = mono - (now - this.data.lastRound);",
+    "to": "      last = undefined;"
+  },
+  {
+    "name": "contract read every round",
+    "file": "src/app.js",
+    "from": "if (this.data.contracts[meter.key]?.date !== today) out.push('contract');",
+    "to": "out.push('contract');"
+  },
+  {
+    "name": "published mark not advanced",
+    "file": "src/app.js",
+    "from": "      [kind]: dates.at(-1),",
+    "to": "      [kind]: undefined,"
+  },
+  {
+    "name": "window from the start every time",
+    "file": "src/app.js",
+    "from": "    let start = last ? nextDate(last) : oldest;",
+    "to": "    let start = oldest;"
+  },
+  {
+    "name": "mark advanced after a failed publication",
+    "file": "src/app.js",
+    "from": "      const e = new MedError(err?.status === 404 ? 'not_created' : 'gladys');\n      e.answered = true;\n      throw e;",
+    "to": ""
+  },
+  {
+    "name": "states not throttled",
+    "file": "src/app.js",
+    "from": "      const room = STATES_PER_MINUTE - used;",
+    "to": "      const room = 100000;"
+  },
+  {
+    "name": "calendar filled with other hours",
+    "file": "src/app.js",
+    "from": "      sameRanges(kept.ranges, contract.offpeak) &&",
+    "to": ""
+  },
+  {
+    "name": "calendar fed without off-peak hours",
+    "file": "src/app.js",
+    "from": "    if (contract.offpeak === null) {\n      this.calendarProblem = 'noOffpeak';\n      return;\n    }",
+    "to": "    if (contract.offpeak === null) {\n      this.calendarProblem = 'noOffpeak';\n      contract.offpeak = [[1320, 360]];\n    }"
+  },
+  {
+    "name": "old generation publishes",
+    "file": "src/app.js",
+    "from": "    const body = await this.request(gen, meter, path);\n    if (this.gone(gen)) return;",
+    "to": "    const body = await this.request(gen, meter, path);"
+  },
+  {
+    "name": "middle minute rule: first minute",
+    "file": "src/offpeak.js",
+    "from": "ranges.some((r) => inRange((start + 15) % 1440, r));",
+    "to": "ranges.some((r) => inRange(start % 1440, r));"
+  },
+  {
+    "name": "overlapping ranges accepted",
+    "file": "src/offpeak.js",
+    "from": "if (ranges.filter((r) => inRange(minute, r)).length > 1) return undefined;",
+    "to": ""
+  },
+  {
+    "name": "other meter answer accepted",
+    "file": "src/med/model.js",
+    "from": "  if (reading.usage_point_id !== undefined && String(reading.usage_point_id) !== pdl) {",
+    "to": "  if (false) {"
+  },
+  {
+    "name": "unit not checked",
+    "file": "src/med/model.js",
+    "from": "  if (unit !== undefined && !units.includes(unit)) return undefined;",
+    "to": ""
+  },
+  {
+    "name": "conflicting days kept",
+    "file": "src/med/model.js",
+    "from": "  for (const date of conflicts) out.delete(date);\n  return out;\n}\n\nconst LOCAL_TIME",
+    "to": "  return out;\n}\n\nconst LOCAL_TIME"
+  },
+  {
+    "name": "incomplete curve day published",
+    "file": "src/med/model.js",
+    "from": "    if (values.length === day.length) out.set(date, values);",
+    "to": "    if (values.length) out.set(date, values);"
+  },
+  {
+    "name": "duplicate curve stamp trusted",
+    "file": "src/med/model.js",
+    "from": "      bad.add(last - (last % HALF_HOUR));",
+    "to": ""
+  },
+  {
+    "name": "peak of 0 published",
+    "file": "src/med/model.js",
+    "from": "if (va === undefined || va <= 0 || va > MAX_POWER_VA) continue;",
+    "to": "if (va === undefined || va > MAX_POWER_VA) continue;"
+  },
+  {
+    "name": "text read as 0",
+    "file": "src/med/model.js",
+    "from": "  if (typeof value !== 'string' || !DIGITS.test(value.trim())) return undefined;",
+    "to": "  if (typeof value !== 'string') return undefined;"
+  },
+  {
+    "name": "body read whole",
+    "file": "src/med/client.js",
+    "from": "    if (size > max) {",
+    "to": "    if (false) {"
+  },
+  {
+    "name": "no gap between requests",
+    "file": "src/med/client.js",
+    "from": "if (wait > 0 && this.sleep) await this.sleep(wait);",
+    "to": ""
+  },
+  {
+    "name": "401 not an error",
+    "file": "src/med/client.js",
+    "from": "  if (status === 401 || status === 403) throw new MedError('unauthorized', { status });",
+    "to": ""
+  },
+  {
+    "name": "PDL of 13 digits accepted",
+    "file": "src/config.js",
+    "from": "const PDL = /^\\d{14}$/;",
+    "to": "const PDL = /^\\d{13,14}$/;"
+  },
+  {
+    "name": "test button not rate limited",
+    "file": "src/app.js",
+    "from": "    if (this.lastTest !== undefined && mono - this.lastTest < TEST_MIN_GAP) {",
+    "to": "    if (false) {"
+  },
+  {
+    "name": "getConfig failure not retried",
+    "file": "src/app.js",
+    "from": "        this.connected().catch((e) => this.log.error(`Start failed (${e?.name ?? 'Error'})`));",
+    "to": ""
+  }
+]

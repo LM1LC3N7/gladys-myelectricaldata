@@ -11,16 +11,27 @@ Gladys through
 [`@gladysassistant/integration-sdk`](https://github.com/GladysAssistant/integration-sdk-js),
 its only runtime dependency. It started from the official JavaScript template.
 
+It reads the **Linky** meters (PDL) of Enedis through the public API of the
+community gateway **MyElectricalData** (`www.myelectricaldata.fr`, Swagger at
+`/docs`, the user's token in `Authorization`): the contract data (off-peak
+hours, subscribed power), the daily consumption, the load curve, the daily
+peak power and production. It feeds the `linky-offpeak` tariff calendar and
+ships the `linky-peak-offpeak` contract template (rules mode). **Read-only.**
+Unofficial: not affiliated with Enedis nor MyElectricalData. Written from the
+Swagger only (the MyElectricalData repositories carry no clear license: never
+copy nor port their code).
+
 ## Commands
 
 ```bash
 npm install
 npm test                                  # node --test, the built-in runner
-node --test test/devices.test.js          # one file
-node --test --test-name-pattern "plug"    # tests whose name matches
+node --test test/model.test.js            # one file
+node --test --test-name-pattern "calendar"      # tests whose name matches
 npm run lint                              # ESLint
 npm run format:check                      # Prettier, as the CI runs it
 npm run format                            # Prettier, fix in place
+npm run mutants                           # mutation check (scripts/mutants.json), use memcap
 npx github:GladysAssistant/integration-store .   # store admission checks
 ```
 
@@ -31,20 +42,42 @@ pushing.
 ## Architecture
 
 ```
-index.js                          SDK wiring only: handlers registered before connect()
-src/devices/index.js              registry of the device blueprints + dispatch helpers
-src/devices/<type>.js             one device type per file (buildDevice, onPoll, onSetValue...)
-src/scenes.js                     scene action handlers (manifest `scene_actions`)
-src/widgets.js                    dashboard widget handlers (manifest `widgets`)
-src/config.js                     DEFAULT_CONFIG (mirrors the manifest defaults) + normalization
-src/weather.js                    example driver (Open-Meteo)
-gladys-assistant-integration.json manifest: name, config_schema, actions, image...
+index.js                          SDK wiring only (src/handlers.js registers the handlers)
+src/handlers.js                   the SDK handlers, shared with the tests
+src/app.js                        MedApp: pace, quotas, /data, reads, publications,
+                                  off-peak calendar, status, test button
+src/med/client.js                 the only network access: GET, bounded, errors without secrets
+src/med/model.js                  answers -> days, half hours, peaks, contract (pure)
+src/offpeak.js                    off-peak hours -> calendar slots (pure)
+src/devices.js                    the devices and feature keys (pure)
+src/time.js                       local time of France (Europe/Paris), pure
+src/config.js                     the form, normalized
+src/store.js                      /data/myelectricaldata.json
+src/constants.js                  endpoint, pace, quotas, bounds, manifest keys
+src/i18n.js                       runtime texts (en/fr)
+gladys-assistant-integration.json manifest: config, action, calendar, contract template
 docs/en.md, docs/fr.md            user documentation, re-hosted by Gladys (mandatory)
-test/                             node --test, against the SDK's fake Gladys (integration-sdk/testing)
-.github/scripts/release.mjs       release helpers (manifest bump, changelog), tested in test/
+test/                             node --test, against the SDK's fake Gladys
+scripts/                          cover.png generator, mutation runner and list
 ```
 
 ## Rules
+
+- **Keys are forever too**: the external ids `pdl:<hash>` (16 hex of an
+  HMAC-SHA-256 of the PDL under the `id_key` kept in the Gladys config outside
+  the form, see `keyOf`; never an unkeyed hash, never the key in /data or a
+  log), the `FEATURE` keys of `src/devices.js`, the calendar key
+  `linky-offpeak` and its values `offpeak` / `peak` (its granularity
+  `thirty_minutes` can never change), the template key `linky-peak-offpeak`
+  and its inputs.
+- **Never the token nor the PDL number** in a log, the status, an error
+  message, an id or `/data` (the last 4 digits only, in names).
+- **Read-only**: never add a write to the user's account.
+- **Be polite with the gateway** (free, with quotas): one read a day, only the
+  days not yet published, at most 12 requests per meter and per day counted
+  in /data before each request, one request at a time, 3 s apart.
+- **Energy**: no index; each day published once (marks in /data); never a
+  value guessed (an unreadable answer, text, a conflict: left out).
 
 - **External ids are forever.** Build them with
   `gladys.externalIds(type, platformId)`, `platformId` being the unique id the

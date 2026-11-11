@@ -1,177 +1,203 @@
 {
   "manifest_version": 1,
   "type": "device",
-  "name": "Demo Devices Template",
+  "name": "MyElectricalData (Linky)",
   "description": {
-    "en": "Starter template showing sensors, a switch, a dimmable light and a smart plug.",
-    "fr": "Template de démarrage : capteurs, interrupteur, lampe variable et prise connectée."
+    "en": "Unofficial: Linky meter through MyElectricalData, consumption, production, real off-peak hours.",
+    "fr": "Non officiel : compteur Linky via MyElectricalData, consommation, production, vraies heures creuses."
   },
-  "version": "1.0.0",
-  "docker_image": "ghcr.io/gladysassistant/integration-template-js:1.0.0",
-  "gladys_version": ">=5.1.0",
-  "cover_image": "https://raw.githubusercontent.com/GladysAssistant/integration-template-js/master/cover.png",
-  "categories": ["lighting", "security", "environment"],
-  "transports": ["local", "cloud"],
+  "version": "0.1.0",
+  "docker_image": "ghcr.io/lm1lc3n7/gladys-myelectricaldata:0.1.0",
+  "gladys_version": ">=5.2.0",
+  "cover_image": "https://raw.githubusercontent.com/LM1LC3N7/gladys-myelectricaldata/main/cover.png",
+  "categories": ["energy"],
+  "transports": ["cloud"],
   "config_schema": [
     {
       "key": "intro",
       "type": "section",
-      "label": { "en": "Getting started", "fr": "Pour commencer" },
+      "label": {
+        "en": "MyElectricalData account",
+        "fr": "Compte MyElectricalData"
+      },
       "description": {
-        "en": "The demo weather station reads real data from the free Open-Meteo API: pick the coordinates to observe. No account, no API key.",
-        "fr": "La station météo de démonstration lit de vraies données via l'API gratuite Open-Meteo : choisissez les coordonnées à observer. Pas de compte, pas de clé d'API."
+        "en": "Unofficial connector, not affiliated with Enedis nor with MyElectricalData. MyElectricalData is a free community gateway to the Enedis data of your Linky meter: give your Enedis consent on myelectricaldata.fr, then copy the token it gives you. The integration reads once a day the days not yet published (daily consumption, and on request the 30-minute load curve, the daily peak power and the production) and the off-peak hours of your meter. Read-only. Then create an energy contract from the \"Linky peak / off-peak (hours of the meter)\" template: its off-peak slots follow the real hours of your meter.",
+        "fr": "Connecteur non officiel, sans lien avec Enedis ni avec MyElectricalData. MyElectricalData est une passerelle communautaire gratuite vers les données Enedis de votre compteur Linky : donnez votre consentement Enedis sur myelectricaldata.fr, puis copiez le jeton qu'il vous donne. L'intégration lit une fois par jour les jours pas encore publiés (consommation du jour, et sur demande la courbe de charge par demi-heure, la puissance max du jour et la production) et les heures creuses de votre compteur. Lecture seule. Créez ensuite un contrat d'énergie depuis le modèle « Linky heures pleines / creuses (plages du compteur) » : ses heures creuses suivent les vraies plages de votre compteur."
       },
       "links": [
         {
-          "url": "https://open-meteo.com/en/docs",
-          "label": { "en": "Open-Meteo documentation", "fr": "Documentation Open-Meteo" }
+          "url": "https://github.com/LM1LC3N7/gladys-myelectricaldata/blob/main/docs/fr.md",
+          "label": { "en": "Guide (French)", "fr": "Guide (français)" }
+        },
+        {
+          "url": "https://github.com/LM1LC3N7/gladys-myelectricaldata/blob/main/docs/en.md",
+          "label": { "en": "Guide (English)", "fr": "Guide (anglais)" }
+        },
+        {
+          "url": "https://www.myelectricaldata.fr/",
+          "label": {
+            "en": "MyElectricalData (consent, token)",
+            "fr": "MyElectricalData (consentement, jeton)"
+          }
         }
       ]
     },
     {
-      "key": "latitude",
-      "type": "number",
-      "label": { "en": "Latitude", "fr": "Latitude" },
-      "description": {
-        "en": "Latitude used for the demo weather sensor.",
-        "fr": "Latitude utilisée par le capteur météo de démonstration."
-      },
-      "placeholder": { "en": "e.g. 48.8566", "fr": "ex. 48.8566" },
+      "key": "token",
+      "type": "secret",
       "required": true,
-      "default": 48.8566,
-      "min": -90,
-      "max": 90
+      "label": { "en": "MyElectricalData token", "fr": "Jeton MyElectricalData" },
+      "description": {
+        "en": "The token myelectricaldata.fr gives once the Enedis consent is done. Kept by Gladys in its database, never shown again, sent only to MyElectricalData (www.myelectricaldata.fr).",
+        "fr": "Le jeton que myelectricaldata.fr donne une fois le consentement Enedis donné. Gardé par Gladys dans sa base, jamais réaffiché, envoyé seulement à MyElectricalData (www.myelectricaldata.fr)."
+      }
     },
     {
-      "key": "longitude",
-      "type": "number",
-      "label": { "en": "Longitude", "fr": "Longitude" },
-      "description": {
-        "en": "Longitude used for the demo weather sensor.",
-        "fr": "Longitude utilisée par le capteur météo de démonstration."
-      },
-      "placeholder": { "en": "e.g. 2.3522", "fr": "ex. 2.3522" },
+      "key": "usage_points",
+      "type": "string",
       "required": true,
-      "default": 2.3522,
-      "min": -180,
-      "max": 180
-    },
-    {
-      "key": "unit",
-      "type": "select",
-      "label": { "en": "Temperature unit", "fr": "Unité de température" },
-      "required": false,
-      "default": "celsius",
-      "options": [
-        { "value": "celsius", "label": { "en": "Celsius", "fr": "Celsius" } },
-        { "value": "fahrenheit", "label": { "en": "Fahrenheit", "fr": "Fahrenheit" } }
-      ]
-    },
-    {
-      "key": "poll_frequency",
-      "type": "number",
-      "label": { "en": "Refresh interval (s)", "fr": "Intervalle de rafraîchissement (s)" },
+      "label": { "en": "Meter number(s) (PDL)", "fr": "Numéro(s) de compteur (PDL)" },
       "description": {
-        "en": "How often sensors are polled, in seconds (one minute minimum).",
-        "fr": "Fréquence d'interrogation des capteurs, en secondes (une minute minimum)."
+        "en": "The 14 digits of your PDL (on your bill, or on the Linky screen), leading zeros kept; several separated by commas (5 at most). The off-peak calendar follows the first one. Sent only to MyElectricalData; Gladys shows its last 4 digits only.",
+        "fr": "Les 14 chiffres de votre PDL (sur votre facture, ou l'écran du Linky), zéros du début gardés ; plusieurs séparés par des virgules (5 au plus). Le calendrier des heures creuses suit le premier. Envoyé seulement à MyElectricalData ; Gladys n'en montre que les 4 derniers chiffres."
       },
+      "placeholder": { "en": "e.g. 01234567890123", "fr": "ex. 01234567890123" }
+    },
+    {
+      "key": "load_curve",
+      "type": "boolean",
       "required": false,
-      "default": 300,
-      "min": 60,
-      "max": 3600
+      "default": false,
+      "label": { "en": "30-minute load curve", "fr": "Courbe de charge par demi-heure" },
+      "description": {
+        "en": "Reads the consumption of every half hour (the last 7 days at most): needs the load curve collection enabled for your meter (Enedis customer area). One more request a day.",
+        "fr": "Lit la consommation de chaque demi-heure (les 7 derniers jours au plus) : il faut que la collecte de la courbe de charge soit activée pour votre compteur (espace client Enedis). Une requête de plus par jour."
+      }
+    },
+    {
+      "key": "max_power",
+      "type": "boolean",
+      "required": false,
+      "default": true,
+      "label": { "en": "Daily peak power", "fr": "Puissance max du jour" },
+      "description": {
+        "en": "Reads the highest power (VA) reached each day. One more request a day.",
+        "fr": "Lit la puissance la plus haute (VA) atteinte chaque jour. Une requête de plus par jour."
+      }
+    },
+    {
+      "key": "production",
+      "type": "boolean",
+      "required": false,
+      "default": false,
+      "label": { "en": "Daily production", "fr": "Production du jour" },
+      "description": {
+        "en": "Only for a meter that also counts a production (solar panels): reads the energy produced each day. One more request a day.",
+        "fr": "Seulement pour un compteur qui compte aussi une production (panneaux solaires) : lit l'énergie produite chaque jour. Une requête de plus par jour."
+      }
     }
   ],
   "actions": [
     {
-      "key": "test_weather",
-      "label": { "en": "Test the weather provider", "fr": "Tester le fournisseur météo" },
-      "timeout_seconds": 30
-    },
-    {
-      "key": "identify",
-      "label": { "en": "Identify a device", "fr": "Identifier un appareil" },
-      "fields": [
-        {
-          "key": "device",
-          "type": "select",
-          "source": "devices",
-          "label": { "en": "Device", "fr": "Appareil" },
-          "required": true
-        }
-      ]
+      "key": "test_connection",
+      "timeout_seconds": 120,
+      "label": { "en": "Test the access", "fr": "Tester l'accès" },
+      "description": {
+        "en": "Checks the access of every meter on the gateway (consent, quota); at most once a minute.",
+        "fr": "Vérifie l'accès de chaque compteur sur la passerelle (consentement, quota) ; au plus une fois par minute."
+      }
     }
   ],
-  "scene_triggers": [
-    {
-      "key": "motion_detected",
-      "label": { "en": "Motion detected", "fr": "Mouvement détecté" },
-      "description": {
-        "en": "A demo motion sensor saw a person or an animal move.",
-        "fr": "Un détecteur de démonstration a vu bouger une personne ou un animal."
-      },
-      "fields": [
-        {
-          "key": "device",
-          "type": "select",
-          "source": "devices",
-          "label": { "en": "Sensor", "fr": "Détecteur" }
+  "energy_contracts": {
+    "templates": [
+      {
+        "key": "linky-peak-offpeak",
+        "name": {
+          "en": "Linky peak / off-peak (hours of the meter)",
+          "fr": "Linky heures pleines / creuses (plages du compteur)"
         },
-        {
-          "key": "target",
-          "type": "multi_select",
-          "label": { "en": "What moved", "fr": "Ce qui a bougé" },
-          "options": [
-            { "value": "person", "label": { "en": "Person", "fr": "Personne" } },
-            { "value": "animal", "label": { "en": "Animal", "fr": "Animal" } }
+        "description": {
+          "en": "Peak and off-peak prices that you enter; the off-peak half hours are the real ones of your meter, read every day from its Enedis contract (they follow the 2025-2027 Enedis changes by themselves). A half hour is off-peak when its middle minute (xx:15 or xx:45) is. Days without calendar are priced at the peak price.",
+          "fr": "Prix heures pleines et heures creuses que vous saisissez ; les demi-heures creuses sont les vraies de votre compteur, lues chaque jour dans son contrat Enedis (elles suivent d'elles-mêmes les changements Enedis 2025-2027). Une demi-heure est creuse quand sa minute du milieu (xx:15 ou xx:45) l'est. Les jours sans calendrier sont comptés au prix des heures pleines."
+        },
+        "country": "FR",
+        "currency": "EUR",
+        "timezone": "Europe/Paris",
+        "pricing_mode": "rules",
+        "version": "1",
+        "calendars": ["linky-offpeak"],
+        "inputs": [
+          {
+            "key": "price_peak",
+            "type": "number",
+            "unit": "EUR/kWh",
+            "required": true,
+            "label": { "en": "Peak hours price per kWh", "fr": "Prix du kWh en heures pleines" },
+            "description": {
+              "en": "Taxes included, as on your bill.",
+              "fr": "Toutes taxes comprises, comme sur votre facture."
+            }
+          },
+          {
+            "key": "price_offpeak",
+            "type": "number",
+            "unit": "EUR/kWh",
+            "required": true,
+            "label": {
+              "en": "Off-peak hours price per kWh",
+              "fr": "Prix du kWh en heures creuses"
+            },
+            "description": {
+              "en": "Taxes included, as on your bill.",
+              "fr": "Toutes taxes comprises, comme sur votre facture."
+            }
+          },
+          {
+            "key": "subscription",
+            "type": "number",
+            "unit": "EUR/month",
+            "default": 0,
+            "label": { "en": "Subscription per month", "fr": "Abonnement par mois" },
+            "description": {
+              "en": "Taxes included.",
+              "fr": "Toutes taxes comprises."
+            }
+          }
+        ],
+        "tariff": {
+          "tariff_version": 1,
+          "calendars": ["linky-offpeak"],
+          "components": [
+            {
+              "key": "energy",
+              "kind": "consumption",
+              "rules": [
+                {
+                  "label": "HC",
+                  "when": { "calendar": { "linky-offpeak": "offpeak" } },
+                  "price": "{{input:price_offpeak}}"
+                }
+              ],
+              "fallback": { "label": "HP", "price": "{{input:price_peak}}" }
+            },
+            {
+              "key": "subscription",
+              "kind": "fixed",
+              "label": "Abonnement",
+              "amount": "{{input:subscription}}",
+              "per": "month"
+            }
           ]
         }
-      ],
-      "variables": [
-        {
-          "key": "target",
-          "type": "string",
-          "label": { "en": "What moved", "fr": "Ce qui a bougé" }
-        }
-      ]
-    }
-  ],
-  "scene_actions": [
-    {
-      "key": "identify_device",
-      "label": { "en": "Identify a device", "fr": "Identifier un appareil" },
-      "description": {
-        "en": "Make a device signal itself (the demo light blinks).",
-        "fr": "Fait se signaler un appareil (la lampe de démonstration clignote)."
-      },
-      "timeout_seconds": 15,
-      "fields": [
-        {
-          "key": "device",
-          "type": "select",
-          "source": "devices",
-          "label": { "en": "Device", "fr": "Appareil" },
-          "required": true
-        }
-      ],
-      "outputs": [
-        {
-          "key": "signalled",
-          "type": "boolean",
-          "label": { "en": "Device signalled", "fr": "Appareil signalé" }
-        }
-      ]
-    }
-  ],
-  "widgets": [
-    {
-      "key": "demo_status",
-      "label": { "en": "Demo status", "fr": "État de la démo" },
-      "description": {
-        "en": "Live temperature and plug power, plug connection and observed location.",
-        "fr": "Température et puissance en direct, connexion de la prise, position observée."
-      },
-      "icon": "activity",
-      "action_timeout_seconds": 15
-    }
-  ]
+      }
+    ],
+    "calendars": [
+      {
+        "key": "linky-offpeak",
+        "granularity": "thirty_minutes",
+        "values": ["offpeak", "peak"],
+        "timezone": "Europe/Paris"
+      }
+    ]
+  }
 }
