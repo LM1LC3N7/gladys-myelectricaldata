@@ -54,5 +54,12 @@
   production are dated states, throttled to 250 a minute.
 - Device ids: HMAC of the PDL under a key kept in the Gladys config
   (`id_key`, as gladys-octopus-germany); the name shows the last 4 digits.
-- Refusal only when the contract of every meter answers 401/403 in one read.
+- Refusal only when the contract of every meter answers 401/403 in one read;
+  lifted by Test, a new token or new meter numbers.
+- Review r1: the HP/HC template needs the load curve (a daily consumption is
+  priced by the core at its midnight half hour): the daily consumption is held
+  while a contract of the template is in force (or the contracts cannot be
+  read); one consumption feature per device (curve or days). A 5xx on one
+  route waits for that route only; the gateway is paused when nothing
+  answered. Dated states by batches of 100, catch-up bounded to 31 days.
 - Gladys `>=5.2.0` (publishEnergyConsumption and the energy contracts).

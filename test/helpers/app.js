@@ -138,12 +138,14 @@ export async function setup({
   wall = { offset: 0 },
   random,
   calendars = { [CALENDARS.OFFPEAK]: [] },
+  contracts = [],
 } = {}) {
   const gladys = createFakeGladys({
     selector: SELECTOR,
     config,
     devices: known,
     energyCalendars: calendars,
+    energyContracts: contracts,
   });
   await gladys.connect();
   const { clock, timers, pending, advance, settle } = createFakeClock(now);

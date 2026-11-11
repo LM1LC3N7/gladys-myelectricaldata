@@ -176,7 +176,14 @@ test('the session: one request at a time, the gap from the END of the previous o
     .catch((e) => e);
   assert.equal(refused.code, 'daily_ceiling');
   assert.equal(events.filter((e) => e[0] === 'start').length, 2);
-  session.close();
+  // Closed while the count is written: nothing leaves.
+  const during = await session
+    .request('/e', () => {
+      session.close();
+    })
+    .catch((e) => e);
+  assert.equal(during.code, 'stopped');
+  assert.equal(events.filter((e) => e[0] === 'start').length, 2);
   const closed = await session.request('/d').catch((e) => e);
   assert.equal(closed.code, 'stopped');
   assert.equal(events.filter((e) => e[0] === 'start').length, 2);

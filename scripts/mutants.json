@@ -38,14 +38,14 @@
   {
     "name": "new token does not lift the refusal",
     "file": "src/app.js",
-    "from": "    if (tokenChanged && this.refused) {",
-    "to": "    if (false) {"
+    "from": "    if ((tokenChanged || pdlsChanged) && this.refused) {",
+    "to": "    if (pdlsChanged && this.refused) {"
   },
   {
     "name": "read after a pause waits the retry gap",
     "file": "src/app.js",
-    "from": "if (this.pause && work && (last === undefined || this.pause.due > last)) due = this.pause.due;",
-    "to": "if (false) due = this.pause.due;"
+    "from": "if (this.pause && work && (last === undefined || this.pause.due > last)) {",
+    "to": "if (false) {"
   },
   {
     "name": "pause not read back from /data",
@@ -80,7 +80,7 @@
   {
     "name": "restart reads at once",
     "file": "src/app.js",
-    "from": "    else if (this.storeState !== 'ok') last = mono;",
+    "from": "    else if (this.storeState !== 'ok') last = this.blindMono ??= mono;",
     "to": ""
   },
   {
@@ -92,13 +92,13 @@
   {
     "name": "contract read every round",
     "file": "src/app.js",
-    "from": "if (this.data.contracts[meter.key]?.date !== today) out.push('contract');",
-    "to": "out.push('contract');"
+    "from": "    if (this.data.contracts[meter.key]?.date !== today && ready('contract')) out.push('contract');",
+    "to": "    out.push('contract');"
   },
   {
     "name": "published mark not advanced",
     "file": "src/app.js",
-    "from": "      [kind]: dates.at(-1),",
+    "from": "      [kind]: mark,",
     "to": "      [kind]: undefined,"
   },
   {
@@ -226,5 +226,227 @@
     "file": "src/app.js",
     "from": "        this.connected().catch((e) => this.log.error(`Start failed (${e?.name ?? 'Error'})`));",
     "to": ""
+  },
+  {
+    "name": "count not saved before the request leaves",
+    "file": "src/app.js",
+    "from": "    counts[meter.key] = (counts[meter.key] ?? 0) + 1;\n    await this.save();",
+    "to": "    counts[meter.key] = (counts[meter.key] ?? 0) + 1;"
+  },
+  {
+    "name": "ceiling off by one (13 a day)",
+    "file": "src/app.js",
+    "from": "if ((counts[meter.key] ?? 0) >= MAX_REQUESTS_PER_DAY) throw",
+    "to": "if ((counts[meter.key] ?? 0) > MAX_REQUESTS_PER_DAY) throw"
+  },
+  {
+    "name": "redirects followed",
+    "file": "src/med/client.js",
+    "from": "      redirect: 'error',",
+    "to": "      redirect: 'follow',"
+  },
+  {
+    "name": "contract of another PDL accepted",
+    "file": "src/med/model.js",
+    "from": ".find((p) => String(p?.usage_point?.usage_point_id ?? '') === pdl);",
+    "to": ".find((p) => p);"
+  },
+  {
+    "name": "off-peak total not bounded",
+    "file": "src/offpeak.js",
+    "from": "  if (total > MAX_TOTAL) return undefined;",
+    "to": ""
+  },
+  {
+    "name": "daily kWh not bounded",
+    "file": "src/med/model.js",
+    "from": "    if (kwh > MAX_DAY_KWH) continue;",
+    "to": ""
+  },
+  {
+    "name": "pause from /data not capped",
+    "file": "src/app.js",
+    "from": "  const left = Math.min(Math.max(0, pause.until - now), PAUSE_MAX);",
+    "to": "  const left = Math.max(0, pause.until - now);"
+  },
+  {
+    "name": "future lastRound of /data trusted",
+    "file": "src/app.js",
+    "from": "      data.lastRound <= now &&\n",
+    "to": ""
+  },
+  {
+    "name": "calendar fill not bounded to 31 days",
+    "file": "src/app.js",
+    "from": "      kept.until < today &&\n      kept.until >= shiftDate(today, -MAX_CALENDAR_FILL_DAYS)",
+    "to": "      kept.until < today"
+  },
+  {
+    "name": "id key adopted without reading it back",
+    "file": "src/app.js",
+    "from": "        await this.gladys.setConfig({ id_key: this.random(32).toString('hex') });\n        key = stored(await this.gladys.getConfig());",
+    "to": "        key = this.random(32).toString('hex');\n        await this.gladys.setConfig({ id_key: key });"
+  },
+  {
+    "name": "id key change keeps the old marks",
+    "file": "src/app.js",
+    "from": "    if (this.data.keyTag && this.data.keyTag !== tag) {",
+    "to": "    if (false) {"
+  },
+  {
+    "name": "session sends after close",
+    "file": "src/med/client.js",
+    "from": "      if (beforeSend) await beforeSend();\n      if (this.closed) throw new MedError('stopped');",
+    "to": "      if (beforeSend) await beforeSend();"
+  },
+  {
+    "name": "calendar of the second meter",
+    "file": "src/app.js",
+    "from": "if (meter.key === this.meters[0]?.key) await this.publishCalendar",
+    "to": "if (meter.key === this.meters.at(-1)?.key) await this.publishCalendar"
+  },
+  {
+    "name": "token with CR/LF accepted",
+    "file": "src/config.js",
+    "from": "  if (CONTROL.test(tokenText) || CONTROL.test(pdlText.replace(/[\\r\\n\\t]/g, ' '))) {",
+    "to": "  if (false) {"
+  },
+  {
+    "name": "unkeyed hash of the PDL",
+    "file": "src/med/model.js",
+    "from": "createHmac('sha256', idKey).update(",
+    "to": "createHmac('sha256', '').update("
+  },
+  {
+    "name": "curve stamp convention: always end",
+    "file": "src/med/model.js",
+    "from": "  const startStamped = windowStart !== undefined && stamps.has(windowStart);",
+    "to": "  const startStamped = false;"
+  },
+  {
+    "name": "pause not set on 5xx",
+    "file": "src/app.js",
+    "from": "const PAUSING = new Set(['rate_limited', 'server']);",
+    "to": "const PAUSING = new Set(['rate_limited']);"
+  },
+  {
+    "name": "refusal persisted without salt check (tag compare dropped)",
+    "file": "src/app.js",
+    "from": "      this.refused.tag === tagOf(this.refused.salt, this.token),",
+    "to": "      true,"
+  },
+  {
+    "name": "states chunk not bounded to the room",
+    "file": "src/app.js",
+    "from": "      const chunk = rest.slice(0, Math.min(room, MAX_STATES_PER_REQUEST));",
+    "to": "      const chunk = rest.slice(0, MAX_STATES_PER_REQUEST);"
+  },
+  {
+    "name": "kWh rounding of the curve: Wh read as kWh",
+    "file": "src/med/model.js",
+    "from": "kwh: Math.round(s.wh * 1000) / 1e6",
+    "to": "kwh: Math.round(s.wh * 1000) / 1e3"
+  },
+  {
+    "name": "daily not held for an HP/HC contract",
+    "file": "src/app.js",
+    "from": "      if (kind === 'daily' && this.templateInUse) continue;",
+    "to": ""
+  },
+  {
+    "name": "contracts unreadable: days published",
+    "file": "src/app.js",
+    "from": "      this.templateInUse = true;\n    }",
+    "to": "      this.templateInUse = false;\n    }"
+  },
+  {
+    "name": "daily and curve both",
+    "file": "src/app.js",
+    "from": "    if (kind === 'daily' && this.config.loadCurve) return false;",
+    "to": ""
+  },
+  {
+    "name": "hole skipped",
+    "file": "src/app.js",
+    "from": "      else if (d >= shiftDate(today, -HOLE_WAIT_DAYS)) break;",
+    "to": ""
+  },
+  {
+    "name": "hole never given up",
+    "file": "src/app.js",
+    "from": "      else if (d >= shiftDate(today, -HOLE_WAIT_DAYS)) break;",
+    "to": "      else break;"
+  },
+  {
+    "name": "states over 100 per call",
+    "file": "src/app.js",
+    "from": "rest.slice(0, Math.min(room, MAX_STATES_PER_REQUEST));",
+    "to": "rest.slice(0, room);"
+  },
+  {
+    "name": "5xx of a route stops the round",
+    "file": "src/app.js",
+    "from": "        if (code === 'rate_limited' || code === 'stopped' || code === 'paused') throw err;",
+    "to": "        if (code === 'rate_limited' || code === 'server' || code === 'stopped' || code === 'paused') throw err;"
+  },
+  {
+    "name": "no rotation",
+    "file": "src/app.js",
+    "from": "    this.rotation = (this.rotation + 1) % Math.max(1, n);",
+    "to": ""
+  },
+  {
+    "name": "PDL change keeps the refusal",
+    "file": "src/app.js",
+    "from": "    if ((tokenChanged || pdlsChanged) && this.refused) {",
+    "to": "    if (tokenChanged && this.refused) {"
+  },
+  {
+    "name": "count reset on a wall clock set back",
+    "file": "src/app.js",
+    "from": "    if (!this.data.requests || this.data.requests.date < today) {",
+    "to": "    if (!this.data.requests || this.data.requests.date !== today) {"
+  },
+  {
+    "name": "queued request sent in a pause",
+    "file": "src/app.js",
+    "from": "    if (this.pauseActive()) throw new MedError('paused');",
+    "to": ""
+  },
+  {
+    "name": "unwritable /data trusted",
+    "file": "src/app.js",
+    "from": "    if (this.storeState === 'ok') await this.save();\n  }",
+    "to": "  }"
+  },
+  {
+    "name": "night read after a pause",
+    "file": "src/app.js",
+    "from": "      if (installed && endsAt < this.roundAt(today)) {",
+    "to": "      if (false) {"
+  },
+  {
+    "name": "calendar not retried",
+    "file": "src/app.js",
+    "from": "      if (this.calendarProblem === 'calendarFailed') this.retryCalendar(gen);",
+    "to": ""
+  },
+  {
+    "name": "both curve stamps accepted",
+    "file": "src/med/model.js",
+    "from": "  if (startStamped && windowEnd !== undefined && stamps.has(windowEnd)) return undefined;",
+    "to": ""
+  },
+  {
+    "name": "one failing route pauses the gateway",
+    "file": "src/app.js",
+    "from": "answered === 0 && serverRoutes > 1) throw serverError;",
+    "to": "answered === 0) throw serverError;"
+  },
+  {
+    "name": "devices not retried by their timer",
+    "file": "src/app.js",
+    "from": "        this.refreshCreated(gen)\n          .then((ok) => {",
+    "to": "        Promise.resolve(false)\n          .then((ok) => {"
   }
 ]

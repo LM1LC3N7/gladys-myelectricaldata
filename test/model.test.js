@@ -222,6 +222,17 @@ test('load curve: start stamps, hours split in two, 10 minutes summed', () => {
   assert.ok(tn.every((x) => x.kwh === 0.3));
 });
 
+test('load curve: values at both ends of the window are unreadable (no shifted day)', () => {
+  const body = M.curve({ start: '2026-11-08', end: '2026-11-09', watts: () => 1000 });
+  // An end-stamped day plus one value stamped at the start of the window.
+  body.meter_reading.interval_reading.unshift({
+    value: '4000',
+    date: '2026-11-08 00:00:00',
+    interval_length: 'PT30M',
+  });
+  assert.equal(parseCurve(body, M.PDL, '2026-11-08', '2026-11-09'), undefined);
+});
+
 test('load curve: the days of the changes of time (46 and 50 half hours)', () => {
   const autumn = M.curve({ start: '2026-10-25', end: '2026-10-26', watts: () => 1000 });
   // The hour seen twice gives the same wall stamps twice, in order.

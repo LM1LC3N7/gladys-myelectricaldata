@@ -49,6 +49,10 @@ import {
   SOON_GAP,
   STATE_BACKFILL_DAYS,
   STATES_PER_MINUTE,
+  MAX_STATES_PER_REQUEST,
+  HOLE_WAIT_DAYS,
+  TEMPLATES,
+  HOUR,
   STORE_RETRY,
   STORE_WAIT,
   TEST_MIN_GAP,
@@ -94,8 +98,9 @@ const FIRST_DAYS = {
 const MAX_DAYS = {
   daily: BACKFILL_DAYS,
   curve: CURVE_DAYS,
-  maxPower: BACKFILL_DAYS,
-  production: BACKFILL_DAYS,
+  // Dated states: a catch-up stays small (older days are left out).
+  maxPower: STATE_BACKFILL_DAYS,
+  production: STATE_BACKFILL_DAYS,
 };
 /** The calendar gap filled between two reads giving the same off-peak hours. */
 const MAX_CALENDAR_FILL_DAYS = 31;
@@ -261,6 +266,15 @@ export class MedApp {
     this.idKeyDue = undefined;
     this.idKeyFailures = 0;
     this.idKeyTimer = null;
+    this.devicesTimer = null;
+    this.devicesDelay = 0;
+    this.devicesUnread = false;
+    this.calendarTimer = null;
+    this.calendarDelay = 0;
+    this.blindMono = undefined;
+    this.backoff = new Map();
+    this.rotation = 0;
+    this.templateInUse = false;
   }
 
   gone(gen) {
@@ -315,7 +329,9 @@ export class MedApp {
     if (tokenChanged || pdlsChanged) this.soon = true;
     // A token changed in this process is always tried, even when its 8-bit
     // tag matches the refused one (a restart keeps the tag only).
-    if (tokenChanged && this.refused) {
+    // Other meters too: a mistyped PDL (not covered by the token) is a refusal
+    // the user fixes in the form.
+    if ((tokenChanged || pdlsChanged) && this.refused) {
       this.refused = undefined;
       this.data.refused = null;
     }
@@ -469,12 +485,20 @@ export class MedApp {
     this.stopEpoch += 1;
     this.gen += 1;
     this.clearRound();
-    for (const timer of [this.configTimer, this.storeTimer, this.idKeyTimer]) {
+    for (const timer of [
+      this.configTimer,
+      this.storeTimer,
+      this.idKeyTimer,
+      this.devicesTimer,
+      this.calendarTimer,
+    ]) {
       if (timer) this.timers.clearTimeout(timer);
     }
     this.configTimer = null;
     this.storeTimer = null;
     this.idKeyTimer = null;
+    this.devicesTimer = null;
+    this.calendarTimer = null;
     this.session?.close();
     this.session = undefined;
     this.token = undefined;
@@ -527,6 +551,9 @@ export class MedApp {
     if (this.storeState === 'ok') return;
     const result = await this.bounded(this.loadStore(), STORE_WAIT);
     if (result === TIMED_OUT && this.storeState === 'pending') this.storeState = 'unreadable';
+    // Readable but not writable: the count of the day would not survive a
+    // restart, so the reads wait as with an unreadable /data.
+    if (this.storeState === 'ok') await this.save();
   }
 
   /** One read of /data at a time; an unreadable one is read again every STORE_RETRY. */
@@ -642,20 +669,23 @@ export class MedApp {
   }
 
   async save() {
-    if (this.storeState !== 'ok') return false;
+    // An unreadable /data is never overwritten; an unwritable one is tried again.
+    if (this.storeState !== 'ok' && this.storeState !== 'unwritable') return false;
     const snapshot = { version: 1, ...this.data };
     try {
       // A slow volume never holds a read: the write goes on in the background.
       const done = this.store.save(snapshot);
       done.catch((err) => this.log.warn(`/data not saved (${err?.name ?? 'Error'})`));
-      return (
+      const ok =
         (await this.bounded(
           done.then(() => true),
           STORE_WAIT,
-        )) === true
-      );
+        ).catch(() => false)) === true;
+      this.storeState = ok ? 'ok' : 'unwritable';
+      return ok;
     } catch (err) {
       this.log.warn(`/data not saved (${err?.name ?? 'Error'})`);
+      this.storeState = 'unwritable';
       return false;
     }
   }
@@ -698,6 +728,8 @@ export class MedApp {
 
   /** The created features of a meter for a kind of data, when the option asks for it. */
   wants(meter, kind) {
+    // One consumption feature only: the curve, or the days without it.
+    if (kind === 'daily' && this.config.loadCurve) return false;
     if (kind === 'curve' && !this.config.loadCurve) return false;
     if (kind === 'production' && !this.config.production) return false;
     if (kind === 'maxPower' && !this.config.maxPower) return false;
@@ -705,12 +737,15 @@ export class MedApp {
   }
 
   /** What a meter still needs today: the contract once a day, the days up to yesterday. */
-  needs(meter, today) {
+  needs(meter, today, mono = this.monotonic()) {
     const out = [];
-    if (this.data.contracts[meter.key]?.date !== today) out.push('contract');
+    const ready = (task) => !((this.backoff.get(`${meter.key}:${task}`)?.due ?? -Infinity) > mono);
+    if (this.data.contracts[meter.key]?.date !== today && ready('contract')) out.push('contract');
     const yesterday = shiftDate(today, -1);
     for (const kind of KINDS) {
-      if (!this.wants(meter, kind)) continue;
+      if (!this.wants(meter, kind) || !ready(kind)) continue;
+      // The days held while a peak / off-peak contract would price them at one half hour.
+      if (kind === 'daily' && this.templateInUse) continue;
       const last = this.data.published[meter.key]?.[kind];
       if (!last || last < yesterday) out.push(kind);
     }
@@ -719,7 +754,8 @@ export class MedApp {
 
   requestsLeft(meter, today) {
     const r = this.data.requests;
-    const used = r && r.date === today ? (r.counts[meter.key] ?? 0) : 0;
+    // A wall clock set back keeps the count of the later day.
+    const used = r && r.date >= today ? (r.counts[meter.key] ?? 0) : 0;
     return MAX_REQUESTS_PER_DAY - used;
   }
 
@@ -733,7 +769,7 @@ export class MedApp {
     // The last read: this process, else /data; /data not read: unknown, a whole gap is waited.
     let last;
     if (this.lastRoundMono !== undefined) last = this.lastRoundMono;
-    else if (this.storeState !== 'ok') last = mono;
+    else if (this.storeState !== 'ok') last = this.blindMono ??= mono;
     else if (finite(this.data.lastRound) && this.data.lastRound <= now) {
       last = mono - (now - this.data.lastRound);
     }
@@ -741,7 +777,7 @@ export class MedApp {
     const wall = (at) => mono + Math.max(0, at - now);
     const tomorrow = wall(this.roundAt(shiftDate(today, 1)));
     const work = this.meters.some(
-      (m) => this.needs(m, today).length && this.requestsLeft(m, today) > 0,
+      (m) => this.needs(m, today, mono).length && this.requestsLeft(m, today) > 0,
     );
     const rounds = this.data.roundsDate === today ? this.data.rounds : 0;
     let due;
@@ -752,8 +788,15 @@ export class MedApp {
     else due = Math.max(gap(RETRY_GAP), gap(MIN_ROUND_GAP));
     // A pause set by the last read: the read comes back at its end (the
     // doubled pause is the spacing), not after the ordinary retry gap.
-    if (this.pause && work && (last === undefined || this.pause.due > last)) due = this.pause.due;
-    else if (this.pause) due = Math.max(due, this.pause.due);
+    if (this.pause && work && (last === undefined || this.pause.due > last)) {
+      due = this.pause.due;
+      // A pause ending in the night: the data of yesterday comes in the morning.
+      const endsAt = now + (this.pause.due - mono);
+      const installed = Object.keys(this.data.contracts).length > 0;
+      if (installed && endsAt < this.roundAt(today)) {
+        due = Math.max(due, wall(this.roundAt(today)));
+      }
+    } else if (this.pause) due = Math.max(due, this.pause.due);
     return due;
   }
 
@@ -789,8 +832,11 @@ export class MedApp {
 
   /** Counts a request of a meter in /data BEFORE it leaves; refuses beyond the ceiling. */
   async countRequest(meter) {
+    // A pause set while this request waited in the queue: nothing sent.
+    if (this.pauseActive()) throw new MedError('paused');
     const today = localDate(this.now());
-    if (!this.data.requests || this.data.requests.date !== today) {
+    // A new count only when the day moves FORWARD (never on a wall clock set back).
+    if (!this.data.requests || this.data.requests.date < today) {
       this.data.requests = { date: today, counts: {} };
     }
     const counts = this.data.requests.counts;
@@ -830,26 +876,43 @@ export class MedApp {
     this.data.rounds += 1;
     await this.save();
     if (this.gone(gen)) return;
+    await this.checkTemplateUse(gen, today);
+    if (this.gone(gen)) return;
     let answered = 0;
     let denied = 0;
     let contractsTried = 0;
+    let serverError;
+    let serverRoutes = 0;
+    // Each read starts with another meter: none is always last.
+    const n = this.meters.length;
+    const order = this.meters.map((_, i) => this.meters[(i + this.rotation) % n]);
+    this.rotation = (this.rotation + 1) % Math.max(1, n);
     try {
-      for (const meter of this.meters) {
+      for (const meter of order) {
         if (this.gone(gen) || this.pauseActive()) break;
         const result = await this.readMeter(gen, meter, today);
         if (this.gone(gen)) return;
         answered += result.answered;
         if (result.contractTried) contractsTried += 1;
         if (result.denied) denied += 1;
+        serverError = result.serverError ?? serverError;
+        serverRoutes += result.serverRoutes;
       }
+      // Nothing answered and several routes (or a contract) in 5xx: the
+      // gateway is down. One data route alone in 5xx waits on its own.
+      if (serverError && answered === 0 && serverRoutes > 1) throw serverError;
     } catch (err) {
       if (this.gone(gen)) return;
       if (PAUSING.has(err?.code)) {
         // A read cut by the gateway (429, 5xx) is not one of the reads of the
         // day: it comes back at the end of the pause (the requests stay counted).
         if (this.data.roundsDate === today && this.data.rounds > 0) this.data.rounds -= 1;
+        // The whole gateway paused: the pause is the spacing of every route.
+        this.backoff.clear();
         await this.setPause(err);
-      } else if (err?.code !== 'stopped') this.log.warn(`Round stopped (${codeOf(err)})`);
+      } else if (err?.code !== 'stopped' && err?.code !== 'paused') {
+        this.log.warn(`Round stopped (${codeOf(err)})`);
+      }
     }
     if (this.gone(gen)) return;
     // Refused: the contract of EVERY meter answered 401/403, and nothing else answered.
@@ -878,8 +941,15 @@ export class MedApp {
 
   /** The reads of one meter: what it needs today, within its daily ceiling. */
   async readMeter(gen, meter, today) {
-    const result = { answered: 0, denied: false, contractTried: false };
+    const result = {
+      answered: 0,
+      denied: false,
+      contractTried: false,
+      serverError: undefined,
+      serverRoutes: 0,
+    };
     const problems = [];
+    if (this.templateInUse && this.wants(meter, 'daily')) problems.push('daily_held');
     for (const task of this.needs(meter, today)) {
       if (this.gone(gen) || this.pauseActive()) break;
       if (this.requestsLeft(meter, today) <= 0) {
@@ -894,9 +964,21 @@ export class MedApp {
           await this.readKind(gen, meter, task, today);
         }
         result.answered += 1;
+        this.backoff.delete(`${meter.key}:${task}`);
       } catch (err) {
         const code = codeOf(err);
-        if (PAUSING.has(code) || code === 'stopped') throw err;
+        if (code === 'rate_limited' || code === 'stopped' || code === 'paused') throw err;
+        if (code === 'server') {
+          // One route of one meter in error: that route waits (15 min doubled
+          // up to 6 h), the other routes and meters go on.
+          const key = `${meter.key}:${task}`;
+          const count = Math.min((this.backoff.get(key)?.count ?? 0) + 1, 16);
+          const wait = Math.min(PAUSE_MAX, SERVER_PAUSE * 2 ** (count - 1));
+          this.backoff.set(key, { count, due: this.monotonic() + wait });
+          result.serverError = err;
+          // A contract counts double: alone, it already means the gateway is down.
+          result.serverRoutes += task === 'contract' ? 2 : 1;
+        }
         if (code === 'daily_ceiling') {
           problems.push(code);
           break;
@@ -972,6 +1054,55 @@ export class MedApp {
       // 403: the key belongs to another integration installed first.
       this.calendarProblem = err?.status === 403 ? 'calendarOwned' : 'calendarFailed';
       this.log.warn(`Off-peak calendar not published (${err?.status ?? err?.name ?? 'Error'})`);
+      if (this.calendarProblem === 'calendarFailed') this.retryCalendar(gen);
+    }
+  }
+
+  /**
+   * Gladys did not take the calendar: published again from the hours read
+   * today (no request), 5 minutes later, doubled up to an hour.
+   */
+  retryCalendar(gen) {
+    if (this.calendarTimer) this.timers.clearTimeout(this.calendarTimer);
+    this.calendarDelay = Math.min(HOUR, Math.max(5 * MINUTE, this.calendarDelay * 2));
+    this.calendarTimer = this.timers.setTimeout(() => {
+      this.calendarTimer = null;
+      const meter = this.meters[0];
+      const kept = meter && this.data.contracts[meter.key];
+      const today = localDate(this.now());
+      if (this.gone(gen) || !kept || kept.date !== today || !kept.offpeak) return;
+      this.publishCalendar(gen, meter, { offpeak: kept.offpeak }, today)
+        .then(() => {
+          if (!this.calendarProblem) this.calendarDelay = 0;
+          return this.report(gen);
+        })
+        .catch(() => {});
+    }, this.calendarDelay);
+  }
+
+  /**
+   * Whether a contract made from the peak / off-peak template is in force:
+   * without the load curve, a daily consumption would be priced at the value
+   * of its first half hour, so the days are held. Not known: held too.
+   */
+  async checkTemplateUse(gen, today) {
+    if (this.config.loadCurve || !this.meters.some((m) => this.wants(m, 'daily'))) {
+      this.templateInUse = false;
+      return;
+    }
+    try {
+      const contracts = await this.bounded(
+        Promise.resolve(this.gladys.getEnergyContracts()),
+        10_000,
+      );
+      if (this.gone(gen)) return;
+      if (!Array.isArray(contracts)) throw new Error('unreadable');
+      this.templateInUse = contracts.some(
+        (c) => c?.template_key === TEMPLATES.PEAK_OFFPEAK && (!c.valid_to || c.valid_to >= today),
+      );
+    } catch (err) {
+      this.log.warn(`Energy contracts not read from Gladys (${err?.name ?? 'Error'})`);
+      this.templateInUse = true;
     }
   }
 
@@ -1002,8 +1133,17 @@ export class MedApp {
     }[kind];
     const values = parse(body, pdl, start, end);
     if (!values) throw new MedError('bad_response');
-    const dates = [...values.keys()].sort();
-    if (!dates.length) return;
+    // The days published: the continuous run from the start of the window. A
+    // missing day stops it (asked again at the next read: Enedis is sometimes
+    // late), unless it has been missing for HOLE_WAIT_DAYS: then it is given up.
+    const dates = [];
+    let mark;
+    for (let d = start; d < end; d = nextDate(d)) {
+      if (values.has(d)) dates.push(d);
+      else if (d >= shiftDate(today, -HOLE_WAIT_DAYS)) break;
+      mark = d;
+    }
+    if (mark === undefined) return;
     const feature = idsOf(this.gladys, meter.key).feature(FEATURE_OF[kind]);
     try {
       if (kind === 'daily') {
@@ -1032,10 +1172,10 @@ export class MedApp {
       throw e;
     }
     if (this.gone(gen)) return;
-    // Published: never asked nor published again.
+    // Published (or given up): never asked nor published again.
     this.data.published[meter.key] = {
       ...(this.data.published[meter.key] ?? {}),
-      [kind]: dates.at(-1),
+      [kind]: mark,
     };
     await this.save();
   }
@@ -1053,8 +1193,8 @@ export class MedApp {
         await this.sleep(this.statesSent[0].at + MINUTE - mono + 1);
         continue;
       }
-      const chunk = rest.slice(0, room);
-      rest = rest.slice(room);
+      const chunk = rest.slice(0, Math.min(room, MAX_STATES_PER_REQUEST));
+      rest = rest.slice(chunk.length);
       this.statesSent.push({ at: mono, count: chunk.length });
       await this.gladys.publishStates(chunk);
     }
@@ -1095,15 +1235,42 @@ export class MedApp {
 
   // --- Gladys --------------------------------------------------------------------------
 
+  /**
+   * The devices the user created. Not read (an error, a timeout): tried again
+   * 30 s later, doubled up to 5 minutes, for ever; the status says so
+   * meanwhile.
+   */
   async refreshCreated(gen) {
+    let devices;
     try {
-      const devices = await this.bounded(Promise.resolve(this.gladys.getDevices()), 10_000);
-      if (this.gone(gen) || devices === TIMED_OUT || !Array.isArray(devices)) return;
-      this.created = new Set();
-      for (const d of devices) this.addCreated(d);
+      devices = await this.bounded(Promise.resolve(this.gladys.getDevices()), 10_000);
     } catch (err) {
       this.log.warn(`Devices not read from Gladys (${err?.name ?? 'Error'})`);
     }
+    if (this.gone(gen)) return false;
+    if (devices === TIMED_OUT || !Array.isArray(devices)) {
+      this.devicesUnread = true;
+      if (this.devicesTimer) this.timers.clearTimeout(this.devicesTimer);
+      this.devicesDelay = Math.min(5 * MINUTE, Math.max(30 * 1000, this.devicesDelay * 2));
+      this.devicesTimer = this.timers.setTimeout(() => {
+        this.devicesTimer = null;
+        if (this.gone(gen) || !this.devicesUnread) return;
+        this.refreshCreated(gen)
+          .then((ok) => {
+            if (!ok || this.gone(gen)) return undefined;
+            this.soon = true;
+            this.schedule(gen);
+            return this.report(gen);
+          })
+          .catch(() => {});
+      }, this.devicesDelay);
+      return false;
+    }
+    this.devicesUnread = false;
+    this.devicesDelay = 0;
+    this.created = new Set();
+    for (const d of devices) this.addCreated(d);
+    return true;
   }
 
   addCreated(device) {
@@ -1215,6 +1382,8 @@ export class MedApp {
       if (problems?.length)
         add('meterProblems', { suffix: meter.suffix, codes: problems.join(', ') });
     }
+    if (this.devicesUnread) add('devicesUnread');
+    if (this.templateInUse && this.meters.some((m) => this.wants(m, 'daily'))) add('dailyHeld');
     const first = this.meters[0];
     const calendar = this.data.calendar;
     if (this.calendarProblem) {
@@ -1227,7 +1396,10 @@ export class MedApp {
         until: `${d}/${mo}/${y}`,
       });
     }
-    return [this.lastReadAt === undefined ? false : Boolean(this.roundOk), message];
+    return [
+      this.lastReadAt === undefined || this.devicesUnread ? false : Boolean(this.roundOk),
+      message,
+    ];
   }
 
   // --- Test button ------------------------------------------------------------------------
@@ -1284,6 +1456,7 @@ export class MedApp {
           await this.report(gen);
           return both('testPaused', { time: dayClock(this.pause.until) });
         }
+        if (code === 'paused') return both('testPaused', { time: dayClock(this.pause.until) });
         if (code === 'unauthorized') denied += 1;
         line = both('testMeterFailed', { suffix: meter.suffix, code });
       }

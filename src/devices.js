@@ -9,9 +9,9 @@
 //                              a log, a status or /data). The device name
 //                              shows its last 4 digits only.
 //
-// Features: the daily consumption and, when asked, the 30-minute consumption
-// (load curve), both fed by publishEnergyConsumption (dated intervals, never
-// an index); the daily production and the daily peak power, dated states.
+// Features: the daily consumption, or the 30-minute consumption (load curve)
+// when asked (never both: a consumption is priced once), fed by
+// publishEnergyConsumption (dated intervals, never an index); the daily production and the daily peak power, dated states.
 // -----------------------------------------------------------------------------
 
 import {
@@ -58,18 +58,22 @@ const sensor = (ids, key, name, category, type, unit, max) => ({
  */
 export function buildPdlDevice(gladys, meter, options, language = 'en') {
   const ids = idsOf(gladys, meter.key);
-  const features = [
-    sensor(
-      ids,
-      FEATURE.DAILY,
-      t('featureDaily', language),
-      C.ENERGY_SENSOR,
-      T.ENERGY_SENSOR.DAILY_CONSUMPTION,
-      U.KILOWATT_HOUR,
-      MAX_DAY_KWH,
-    ),
-  ];
-  if (options.loadCurve) {
+  const features = [];
+  // One consumption feature only (never priced twice): the half hours when
+  // the load curve is read, the days otherwise.
+  if (!options.loadCurve) {
+    features.push(
+      sensor(
+        ids,
+        FEATURE.DAILY,
+        t('featureDaily', language),
+        C.ENERGY_SENSOR,
+        T.ENERGY_SENSOR.DAILY_CONSUMPTION,
+        U.KILOWATT_HOUR,
+        MAX_DAY_KWH,
+      ),
+    );
+  } else {
     features.push(
       sensor(
         ids,

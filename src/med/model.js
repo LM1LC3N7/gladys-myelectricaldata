@@ -121,8 +121,9 @@ const LENGTH = /^PT(\d{1,2})M$/;
  * PT15M, PT30M or PT60M) -> the energy of the 30-minute slots of the local
  * clock of France: Map date -> [{ starts_at, kwh }] for the COMPLETE days of
  * [start, end) only (every slot of the day known once). Enedis stamps each
- * value with the END of its interval; an answer whose first value is stamped
- * at the start of the window uses the start of the interval (read as such).
+ * value with the END of its interval; an answer with a value stamped at the
+ * start of the window uses the start of the interval (read as such), one
+ * with values at both the start and the end of the window is unreadable.
  * An hour seen twice (autumn) is told apart by order. Undefined when
  * unreadable.
  */
@@ -131,10 +132,11 @@ export function parseCurve(body, pdl, start, end) {
   if (!list) return undefined;
   const windowStart = parseLocalDate(start);
   const windowEnd = parseLocalDate(end);
-  // The stamp convention of this answer.
-  const startStamped = list.some(
-    (item) => localTimeInstants(item?.date)[0] === windowStart && windowStart !== undefined,
-  );
+  // The stamp convention of this answer: a value at the end of the window
+  // (end stamps) or at its start (start stamps); both: unreadable.
+  const stamps = new Set(list.map((item) => localTimeInstants(item?.date)[0]));
+  const startStamped = windowStart !== undefined && stamps.has(windowStart);
+  if (startStamped && windowEnd !== undefined && stamps.has(windowEnd)) return undefined;
   const slots = new Map();
   const bad = new Set();
   const seen = new Map();

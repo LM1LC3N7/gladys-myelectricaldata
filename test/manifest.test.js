@@ -235,7 +235,6 @@ test('the devices: units of the core only, every feature read-only, no switch', 
   assert.deepEqual(
     devices[0].features.map((f) => [f.category, f.type]),
     [
-      ['energy-sensor', 'daily-consumption'],
       ['energy-sensor', 'thirty-minutes-consumption'],
       ['energy-sensor', 'power'],
       ['energy-production-sensor', 'daily-production'],

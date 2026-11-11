@@ -9,8 +9,8 @@ Unofficial integration, not affiliated with Enedis nor with MyElectricalData.
 [MyElectricalData](https://www.myelectricaldata.fr/) is a free community gateway to the Enedis data of
 your Linky meter. This integration reads, for each meter (PDL) you enter:
 
-- the **daily consumption** (kWh), published to the Gladys energy monitoring;
-- on request, the **30-minute consumption** (load curve), for the time-of-use contracts;
+- the **daily consumption** (kWh), published to the Gladys energy monitoring, or on request the
+  **30-minute consumption** (load curve) instead (never both: a consumption is priced once);
 - on request, the **daily peak power** (VA) and the **daily production** (solar panels);
 - the **off-peak hours** of the meter (its Enedis contract), which feed the `linky-offpeak` tariff
   calendar of the "Linky peak / off-peak (hours of the meter)" contract template.
@@ -31,13 +31,21 @@ Read-only: nothing is ever changed on your account nor on your meter.
 3. Press **Test the access**: for each meter, the gateway says whether the access is valid, until when
    the consent runs and how many calls it counted.
 4. In **Discovery**, create the "Linky meter …1234" device (only the last 4 digits of the PDL are shown).
-   Its data is read a minute later: one year of daily consumption, 7 days of load curve, 31 days of peak
-   power and production.
+   Its data is read a minute later: one year of daily consumption (or 7 days of load curve), 31 days of
+   peak power and production.
 
 ## The energy contract with the real off-peak hours
 
 Create an energy contract on the Linky meter from the **"Linky peak / off-peak (hours of the meter)"**
 template and enter your peak and off-peak prices per kWh (taxes included) and your monthly subscription.
+
+**This template needs the "30-minute load curve" option.** Gladys prices a daily consumption as one
+interval stamped at midnight: it would take the price of the first half hour of the day for the whole
+day (all off-peak with 22:00-06:00, all peak with 02:00-07:00). So, without the load curve, while a
+contract made from this template is in force, the daily consumption is **held** (neither asked nor
+published) and the status asks you to enable the load curve. With the load curve, every half hour is
+priced at its own price. Without contract from this template, the daily consumption is published as
+usual (for a flat-price contract).
 
 The off-peak half hours are not typed by you: they come from the contract data of your meter, read every
 day. Under the Enedis changes of 2025-2027 (part of the off-peak hours moved to the afternoon), the new
@@ -63,24 +71,32 @@ The gateway is a free service: the integration asks for little.
 - One read a day, from 09:00 (local time of France; a minute between 09:00 and 11:00 proper to your
   installation), asking only for the days not yet published. Enedis gives the data of a day the next
   morning.
-- While yesterday is missing: again 3 hours later, at most 3 reads a day; then the next morning.
+- While yesterday is missing: again 3 hours later, at most 3 ordinary reads a day; then the next
+  morning. The reads after a pause, a new device or a changed configuration come on top, but the ceiling
+  below always holds.
 - A new device, or a new token or meter in the configuration: read a minute later.
 - At most 12 requests per meter and per day, counted before each request and kept in `/data` (a restart
   does not reset the count).
 - A "slow down" answer (429) pauses every request, for the time asked (or 1 hour, then 2, 4, up to
-  6 hours); a gateway error (5xx) pauses for 15 minutes, doubled up to 6 hours. The pause is kept across a
-  restart.
+  6 hours). A gateway error (5xx) on one route of one meter (the load curve not collected, say) makes
+  that route wait 15 minutes, doubled up to 6 hours: the other routes and meters go on, and each read
+  starts with another meter. When nothing answered at all, every request pauses (15 minutes, doubled up
+  to 6 hours). A pause is kept across a restart; one ending in the night waits for the morning read.
+- A request waiting in the queue when a pause starts is not sent.
 - The test button asks once per meter, at most once a minute.
 
 ## What is published, and when
 
 - **Daily consumption**: each day once, through the dated consumption of Gladys (no index: nothing can
-  go down). A day corrected later by Enedis is not published again.
+  go down). A day corrected later by Enedis is not published again. A day missing from an answer stops
+  the publication there: it and the days after it are asked again at the next read (Enedis is sometimes
+  late); a day still missing 5 days later is given up.
 - **30-minute consumption**: whole days only (every half hour of the day known once); an hourly curve is
   split in two halves, a 10 or 15-minute curve summed. At most the last 7 days (the Enedis limit of one
   request): a gap longer than that is not filled.
 - **Peak power and production**: dated states (the time of the peak; the local midnight for the
-  production), at most 250 a minute. A peak of 0 is left out.
+  production), by batches of 100, at most 250 a minute. After a long stop, only the last 31 days are
+  caught up. A peak of 0 is left out.
 - A value that is not a number, a day given twice with two values, an answer about another meter or in
   another unit: left out, never published as 0.
 - Gladys should run in the Europe/Paris time zone: the days of Enedis are days of France.
@@ -89,18 +105,22 @@ The gateway is a free service: the integration asks for little.
 
 - **Refused**: when the contract of **every** meter is answered 401 or 403 in the same read, the token is
   taken as refused: no request is sent any more, until you press **Test the access** with success or
-  enter another token. A 401/403 on a data route, or on one meter only, is not a refusal (the status
+  change the token or the meter numbers (a mistyped PDL is refused too). A 401/403 on a data route, or on one meter only, is not a refusal (the status
   names the meter and the route).
 - The token and the PDL number are never written in the logs, the status nor `/data`. `/data` keeps a
   keyed hash of each meter, the last day published per kind of data, the off-peak hours read, the count
   of requests of the day, the pause and 8 bits of a salted hash of a refused token.
 - The device ids come from a key made once and kept in the Gladys configuration (not in the form).
+- The devices not read from Gladys at a start: tried again 30 seconds later (doubled up to 5 minutes); the status says so and nothing is published meanwhile.
+- `/data` that cannot be read or written: the reads wait an hour after a start (the count of the day
+  cannot be trusted) and the status says so.
 
 ## Limits
 
 - Never tested with a real meter; the stamp of the load curve (end of each interval, as Enedis documents
   it) is checked against each answer but not against real data.
 - The days before the installation are priced at the peak price by the template.
+- The template needs the load curve: a meter without load curve collection cannot use it.
 - Several meters: the calendar follows the first one only.
 
 ## Data

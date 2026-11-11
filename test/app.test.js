@@ -11,7 +11,17 @@ import { MAX_REQUESTS_PER_DAY } from '../src/constants.js';
 import { keyOf } from '../src/med/model.js';
 import { createMemoryStore } from '../src/store.js';
 import { localDate } from '../src/time.js';
-import { CONFIG, DAY, HOUR, MINUTE, createMed, json, setup, written } from './helpers/app.js';
+import {
+  CONFIG,
+  DAY,
+  HOUR,
+  MINUTE,
+  createMed,
+  defaults,
+  json,
+  setup,
+  written,
+} from './helpers/app.js';
 import * as M from './fixtures/med.js';
 
 const statusText = (env) => env.fake.connectionStatus?.message?.en ?? '';
@@ -424,12 +434,13 @@ test('options: the load curve (7 days of half hours) and the production (dated s
   const [device] = env.fake.discoveredDevices;
   assert.deepEqual(
     device.features.map((f) => f.external_id.split(':').at(-1)),
-    ['daily_consumption', 'consumption', 'max_power', 'daily_production'],
+    ['consumption', 'max_power', 'daily_production'],
+    'the half hours replace the days: a consumption is never priced twice',
   );
   await createAll(env);
   await env.wait(2 * MINUTE);
-  assert.deepEqual(env.med.ops(), ['contracts', 'daily', 'curve', 'maxPower', 'production']);
-  const curve = env.med.calls[2];
+  assert.deepEqual(env.med.ops(), ['contracts', 'curve', 'maxPower', 'production']);
+  const curve = env.med.calls[1];
   assert.deepEqual([curve.start, curve.end], ['2026-11-04', '2026-11-11']);
   const halves = env.fake.publishedEnergyConsumption
     .filter((b) => b.device_feature_external_id === F('consumption'))
@@ -450,11 +461,15 @@ test('states throttled: never more than 250 a minute', async (t) => {
     config: { ...CONFIG, production: true, usage_points: `${M.PDL},${M.PDL2}` },
   });
   t.after(() => env.app.stop());
-  // A long absence: 100 days of peaks and production for two meters.
+  // A long absence: 100 days of peaks and production for two meters, and a
+  // small batch room left: never more than 250 a minute.
   env.app.data.published = {
     [KEY]: { daily: '2026-11-10', maxPower: '2026-08-02', production: '2026-08-02' },
     [KEY2]: { daily: '2026-11-10', maxPower: '2026-08-02', production: '2026-08-02' },
   };
+  // 240 states published just before: room for 10 only in this minute.
+  // (stamped at the read, a minute after the device is created)
+  env.app.statesSent.push({ at: env.clock.now + MINUTE + 500, count: 240 });
   const sent = [];
   const real = env.gladys.publishStates.bind(env.gladys);
   env.gladys.publishStates = (states) => {
@@ -464,7 +479,10 @@ test('states throttled: never more than 250 a minute', async (t) => {
   await createAll(env);
   await env.wait(10 * MINUTE);
   const total = sent.reduce((n, s) => n + s.count, 0);
-  assert.equal(total, 4 * 100);
+  // The catch-up is bounded to 31 days per kind (older ones left out), by batches of 100.
+  assert.equal(total, 4 * 31);
+  assert.ok(sent.every((s) => s.count <= 100));
+  assert.equal(sent[0].count, 10, 'only the room left in this minute');
   // No window of a minute (on the virtual clock) holds more than 250.
   for (const s of sent) {
     const inWindow = sent.filter((x) => x.at >= s.at && x.at < s.at + MINUTE);
@@ -602,4 +620,393 @@ test('stop: the request in flight aborted, nothing sent after, no timer left', a
   await env.wait(3 * DAY);
   assert.equal(med.calls.length, sent);
   assert.equal(env.pending.size, 0, 'no timer left');
+});
+
+// --- Review r1 -------------------------------------------------------------------
+
+const TEMPLATE_CONTRACT = {
+  id: 'c1',
+  template_key: 'linky-peak-offpeak',
+  template_version: '1',
+  pricing_mode: 'rules',
+  inputs: {},
+  valid_from: '2026-11-01',
+  valid_to: null,
+  timezone: 'Europe/Paris',
+  currency: 'EUR',
+  billing_period_start_day: 1,
+  status: 'active',
+};
+
+test('I1: without the load curve, a peak / off-peak contract holds the daily consumption', async (t) => {
+  const env = await started({
+    config: { ...CONFIG, max_power: false },
+    contracts: [TEMPLATE_CONTRACT],
+  });
+  t.after(() => env.app.stop());
+  await createAll(env);
+  await env.wait(2 * MINUTE);
+  assert.equal(env.med.count('daily'), 0, 'not even asked');
+  assert.equal(dailyDates(env).length, 0, 'never one point a day for an HP/HC contract');
+  assert.match(statusText(env), /needs the 30-minute load curve: the daily consumption is held/);
+  // The contract ended: the days are read and published again.
+  env.fake.energyContracts = [{ ...TEMPLATE_CONTRACT, valid_to: '2026-11-10' }];
+  await env.wait(DAY);
+  assert.equal(dailyDates(env).length, 365);
+  assert.doesNotMatch(statusText(env), /held/);
+});
+
+test('I1: the contracts not readable from Gladys: the days held, never guessed', async (t) => {
+  const env = await started({ config: { ...CONFIG, max_power: false } });
+  t.after(() => env.app.stop());
+  env.gladys.getEnergyContracts = () => Promise.reject(new Error('down'));
+  await createAll(env);
+  await env.wait(2 * MINUTE);
+  assert.equal(dailyDates(env).length, 0);
+});
+
+test('I1: with the load curve, the half hours only (no daily feature to price)', async (t) => {
+  const env = await started({
+    config: { ...CONFIG, load_curve: true, max_power: false },
+    contracts: [TEMPLATE_CONTRACT],
+  });
+  t.after(() => env.app.stop());
+  await createAll(env);
+  await env.wait(2 * MINUTE);
+  assert.deepEqual(env.med.ops(), ['contracts', 'curve']);
+  assert.equal(dailyDates(env, F('consumption')).length, 7 * 48);
+  assert.doesNotMatch(statusText(env), /held/);
+});
+
+test('I3: a day missing in the middle is asked again, never skipped', async (t) => {
+  let late = true;
+  const med = createMed({
+    daily: ({ pdl, start, end }) =>
+      M.daily({
+        pdl,
+        start,
+        end,
+        value: (d, i) => (late && d === '2026-11-08' ? undefined : 1000 + i),
+      }),
+  });
+  const env = await started({ med, config: { ...CONFIG, max_power: false } });
+  t.after(() => env.app.stop());
+  await createAll(env);
+  await env.wait(2 * MINUTE);
+  assert.equal(env.store.data.published[KEY].daily, '2026-11-07');
+  assert.equal(dailyDates(env).at(-1), '2026-11-07', 'the days after the hole wait');
+  late = false;
+  await env.wait(3 * HOUR);
+  assert.deepEqual([med.calls.at(-1).start, med.calls.at(-1).end], ['2026-11-08', '2026-11-11']);
+  const dates = dailyDates(env);
+  assert.equal(dates.length, 365);
+  assert.equal(new Set(dates).size, 365, 'each day once');
+  assert.ok(dates.includes('2026-11-08'));
+});
+
+test('I3: a day missing for more than 5 days is given up', async (t) => {
+  const med = createMed({
+    daily: ({ pdl, start, end }) =>
+      M.daily({ pdl, start, end, value: (d, i) => (d === '2026-06-01' ? undefined : 1000 + i) }),
+  });
+  const env = await started({ med, config: { ...CONFIG, max_power: false } });
+  t.after(() => env.app.stop());
+  await createAll(env);
+  await env.wait(2 * MINUTE);
+  assert.equal(env.store.data.published[KEY].daily, '2026-11-10');
+  assert.equal(dailyDates(env).length, 364);
+});
+
+test('I4: a 5xx on a route of one meter never stops the other routes and meters', async (t) => {
+  const med = createMed({
+    curve: (call) => (call.pdl === M.PDL ? json({}, 500) : defaults.curve(call)),
+  });
+  const env = await started({
+    med,
+    config: { ...CONFIG, load_curve: true, usage_points: `${M.PDL},${M.PDL2}` },
+  });
+  t.after(() => env.app.stop());
+  await createAll(env);
+  await env.wait(2 * MINUTE);
+  assert.equal(env.app.pause, undefined, 'no global pause: other routes answered');
+  // The read after the first one starts with the second meter.
+  assert.equal(med.calls[2].pdl, M.PDL2);
+  const ops = med.calls.map((c) => `${c.op}:${c.pdl === M.PDL ? 1 : 2}`);
+  assert.ok(ops.includes('maxPower:1'), 'the route after the failing one is read');
+  assert.ok(ops.includes('curve:2') && ops.includes('maxPower:2'), 'the other meter is read');
+  assert.equal(dailyDates(env, F('consumption', KEY2)).length, 7 * 48);
+  assert.match(statusText(env), /Meter …1234: curve_server/);
+  // The failing route waits; the next read starts with the other meter.
+  await env.wait(3 * HOUR);
+  assert.equal(med.calls.filter((c) => c.op === 'curve' && c.pdl === M.PDL).length, 2);
+});
+
+test('I4: the only route left in 5xx waits on its own: 3 reads a day, no pause of all', async (t) => {
+  const med = createMed({ curve: () => json({}, 500) });
+  const env = await started({ med, config: { ...CONFIG, load_curve: true } });
+  t.after(() => env.app.stop());
+  await createAll(env);
+  await env.wait(20 * HOUR);
+  assert.equal(env.app.pause, undefined);
+  assert.ok(med.count('curve') <= 3, `${med.count('curve')} curve requests today`);
+  assert.equal(med.count('maxPower'), 1);
+});
+
+test('I1: a device made before the load curve option: its daily feature is not read', async (t) => {
+  const env = await started({ config: { ...CONFIG, load_curve: true, max_power: false } });
+  t.after(() => env.app.stop());
+  const [device] = structuredClone(env.fake.discoveredDevices);
+  device.features.push({
+    ...device.features[0],
+    name: 'Daily consumption',
+    external_id: F('daily_consumption'),
+    type: 'daily-consumption',
+  });
+  await env.fake.deviceCreated(device);
+  await env.wait(2 * MINUTE);
+  assert.deepEqual(env.med.ops(), ['contracts', 'curve']);
+});
+
+test('I2: dated states by batches of 100 at most', async (t) => {
+  const env = await started({ config: { ...CONFIG, production: true } });
+  t.after(() => env.app.stop());
+  const sizes = [];
+  env.gladys.publishStates = async (states) => sizes.push(states.length);
+  const feature = F('daily_production');
+  const states = Array.from({ length: 150 }, (_, i) => ({
+    device_feature_external_id: feature,
+    state: i,
+    created_at: new Date(M.NOW - (i + 1) * DAY).toISOString(),
+  }));
+  await env.app.publishDated(env.app.gen, states);
+  assert.deepEqual(sizes, [100, 50]);
+});
+
+test('I5: the devices not read from Gladys at start: retried, the status says so', async (t) => {
+  const first = await started({ config: { ...CONFIG, max_power: false } });
+  await createAll(first);
+  const devices = first.fake.devices;
+  await first.app.stop();
+  const env = await setup({ devices, config: { ...CONFIG, max_power: false } });
+  registerHandlers(env.gladys, env.app, env.app.log);
+  t.after(() => env.app.stop());
+  const real = env.gladys.getDevices.bind(env.gladys);
+  // Down at the start and at the first read: retried by its own timer.
+  let failures = 2;
+  env.gladys.getDevices = () => (failures-- > 0 ? Promise.reject(new Error('down')) : real());
+  await env.start();
+  assert.match(statusText(env), /devices could not be read from Gladys/);
+  assert.equal(env.fake.connectionStatus.connected, false);
+  await env.wait(2 * MINUTE);
+  assert.equal(dailyDates(env).length, 365);
+  assert.doesNotMatch(statusText(env), /devices could not be read/);
+});
+
+test('I6: a fixed PDL lifts the refusal (same token)', async (t) => {
+  const med = createMed({
+    contracts: ({ pdl }) => (pdl === M.PDL2 ? json({}, 403) : M.contracts({ pdl })),
+  });
+  const env = await started({ med, config: { ...CONFIG, usage_points: M.PDL2 } });
+  t.after(() => env.app.stop());
+  assert.match(statusText(env), /refused/);
+  await env.fake.configUpdated({ ...CONFIG });
+  await env.wait(2 * MINUTE);
+  assert.equal(med.calls.filter((c) => c.pdl === M.PDL).length, 1);
+  assert.match(statusText(env), /^Connected/);
+});
+
+test('I7: the count is in /data before the request leaves', async (t) => {
+  const store = createMemoryStore();
+  const seen = [];
+  const med = createMed({
+    contracts: (call) => {
+      seen.push(store.data.requests?.counts?.[KEY]);
+      return defaults.contracts(call);
+    },
+  });
+  const env = await started({ med, store });
+  t.after(() => env.app.stop());
+  assert.deepEqual(seen, [1]);
+});
+
+const TAG = keyOf(M.ID_KEY, 'tag', 'myelectricaldata').slice(0, 8);
+
+test('I7: a pause of /data is capped to 6 hours; a future last read is invalid', async (t) => {
+  const store = createMemoryStore({
+    keyTag: TAG,
+    pause: { until: M.NOW + 30 * HOUR, count: 1, code: 'server', detail: null },
+  });
+  const env = await started({ store });
+  t.after(() => env.app.stop());
+  await env.wait(6 * HOUR - MINUTE);
+  assert.equal(env.med.calls.length, 0);
+  await env.wait(2 * MINUTE);
+  assert.equal(env.med.count('contracts'), 1);
+  const future = await started({
+    store: createMemoryStore({ keyTag: TAG, lastRound: M.NOW + 10 * HOUR }),
+  });
+  t.after(() => future.app.stop());
+  assert.equal(future.med.count('contracts'), 1, 'a last read in the future is ignored');
+  // Not even kept (a config problem: no read overwrites it).
+  const kept = await started({
+    store: createMemoryStore({ keyTag: TAG, lastRound: M.NOW + 10 * HOUR }),
+    config: { ...CONFIG, token: '' },
+  });
+  t.after(() => kept.app.stop());
+  assert.equal(kept.app.data.lastRound, null);
+});
+
+test('I7: the calendar gap is filled 31 days back at most', async (t) => {
+  const env = await started({
+    store: createMemoryStore({
+      keyTag: TAG,
+      calendar: { key: KEY, until: '2026-10-01', ranges: [[1320, 360]] },
+    }),
+  });
+  t.after(() => env.app.stop());
+  assert.equal(env.fake.publishedEnergyCalendars[0].entries.length, 7 * 48);
+});
+
+test('I7: the id key Gladys holds is the one used (read back), another key drops the marks', async (t) => {
+  const env = await setup({ config: { token: M.TOKEN, usage_points: M.PDL } });
+  registerHandlers(env.gladys, env.app, env.app.log);
+  t.after(() => env.app.stop());
+  // Another writer stored its key first: that one wins.
+  const realSet = env.gladys.setConfig.bind(env.gladys);
+  env.gladys.setConfig = async () => realSet({ id_key: 'c'.repeat(64) });
+  await env.start();
+  assert.ok(
+    env.fake.discoveredDevices[0].external_id.endsWith(keyOf('c'.repeat(64), 'pdl', M.PDL)),
+  );
+  const store = createMemoryStore({
+    keyTag: '0badc0de',
+    published: { [KEY]: { daily: '2026-11-10' } },
+    contracts: { [KEY]: { date: '2026-11-11', offpeak: [[1320, 360]] } },
+  });
+  const other = await started({ store });
+  t.after(() => other.app.stop());
+  assert.deepEqual(store.data.published, {});
+  assert.equal(
+    other.med.count('contracts'),
+    1,
+    'the contract kept under another key is read again',
+  );
+});
+
+test('I7: the device key is an HMAC under the id key (fixed vector)', async () => {
+  const { createHmac } = await import('node:crypto');
+  const expected = createHmac('sha256', M.ID_KEY)
+    .update(`pdl\u0000${M.PDL}`, 'utf8')
+    .digest('hex')
+    .slice(0, 16);
+  assert.equal(KEY, expected);
+  assert.notEqual(
+    KEY,
+    createHmac('sha256', '').update(`pdl\u0000${M.PDL}`, 'utf8').digest('hex').slice(0, 16),
+  );
+});
+
+test('I7: a refusal kept in /data does not hold another token after a restart', async (t) => {
+  const store = createMemoryStore();
+  const med = createMed({
+    contracts: ({ pdl, auth }) => (auth === M.TOKEN ? json({}, 401) : M.contracts({ pdl })),
+  });
+  const random = (n) => Buffer.alloc(n, 1);
+  const env = await started({ med, store, random });
+  assert.ok(store.data.refused);
+  const { tagOf } = await import('../src/app.js');
+  assert.notEqual(tagOf(store.data.refused.salt, 'another-token-123456'), store.data.refused.tag);
+  await env.app.stop();
+  const later = await started({
+    med,
+    store,
+    random,
+    now: env.clock.now + 2 * HOUR,
+    config: { ...CONFIG, token: 'another-token-123456' },
+  });
+  t.after(() => later.app.stop());
+  await later.wait(2 * HOUR);
+  assert.equal(med.count('contracts'), 2);
+  // The same token after a restart stays refused.
+  await later.app.stop();
+  const same = await started({ med, store, now: env.clock.now + 4 * HOUR });
+  t.after(() => same.app.stop());
+  await same.wait(DAY);
+  assert.equal(med.calls.filter((c) => c.auth === M.TOKEN).length, 1);
+});
+
+test('M2: a wall clock set back keeps the count of the later day', async (t) => {
+  const store = createMemoryStore({
+    keyTag: TAG,
+    requests: { date: '2026-11-12', counts: { [KEY]: MAX_REQUESTS_PER_DAY } },
+  });
+  const env = await started({ store });
+  t.after(() => env.app.stop());
+  await env.wait(3 * HOUR);
+  assert.equal(env.med.calls.length, 0);
+  const reply = await env.fake.action('test_connection');
+  assert.match(reply.data.message.en, /daily_ceiling/);
+  assert.equal(env.med.calls.length, 0);
+});
+
+test('M3: a pause set while a request waits in the queue: nothing sent', async (t) => {
+  const env = await started();
+  t.after(() => env.app.stop());
+  env.app.pause = {
+    until: M.NOW + HOUR,
+    due: env.app.monotonic() + HOUR,
+    count: 1,
+    code: 'rate_limited',
+  };
+  const err = await env.app.countRequest(env.app.meters[0]).catch((e) => e);
+  assert.equal(err.code, 'paused');
+});
+
+test('M4: /data not writable: the reads wait an hour after a start, the status says so', async (t) => {
+  const store = createMemoryStore();
+  store.failSave = true;
+  const env = await started({ store });
+  t.after(() => env.app.stop());
+  assert.equal(env.med.calls.length, 0);
+  assert.match(statusText(env), /cannot be read or written/);
+  await env.wait(59 * MINUTE);
+  assert.equal(env.med.calls.length, 0);
+  await env.wait(2 * MINUTE);
+  assert.equal(env.med.count('contracts'), 1);
+});
+
+test('M5: a pause ending in the night: the read waits for the morning', async (t) => {
+  // 02:00 in Paris, the contract read yesterday.
+  const night = Date.UTC(2026, 10, 11, 1, 0);
+  const store = createMemoryStore({
+    keyTag: TAG,
+    lastRound: night - 10 * HOUR,
+    contracts: { [KEY]: { date: '2026-11-10', offpeak: [[1320, 360]] } },
+  });
+  const med = createMed({ access: () => json({}, 503) });
+  const env = await started({ store, med, now: night });
+  t.after(() => env.app.stop());
+  await env.fake.action('test_connection');
+  assert.ok(env.app.pause);
+  await env.wait(6 * HOUR);
+  assert.equal(med.count('contracts'), 0, 'not at 02:15 nor 06:00');
+  await env.wait(3 * HOUR);
+  assert.equal(med.count('contracts'), 1);
+  assert.ok(localDate(med.calls.at(-1).at) === '2026-11-11');
+});
+
+test('M6: the calendar Gladys did not take is published again without a request', async (t) => {
+  const env = await setup();
+  registerHandlers(env.gladys, env.app, env.app.log);
+  t.after(() => env.app.stop());
+  const real = env.gladys.publishEnergyCalendar.bind(env.gladys);
+  let failures = 1;
+  env.gladys.publishEnergyCalendar = (...args) =>
+    failures-- > 0 ? Promise.reject(new Error('busy')) : real(...args);
+  await env.start();
+  assert.match(statusText(env), /did not take the off-peak calendar/);
+  await env.wait(5 * MINUTE + 1000);
+  assert.equal(env.fake.publishedEnergyCalendars.length, 1);
+  assert.equal(env.med.calls.length, 1);
+  assert.match(statusText(env), /calendar published up to 17\/11\/2026/);
 });

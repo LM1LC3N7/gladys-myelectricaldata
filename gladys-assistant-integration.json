@@ -21,8 +21,8 @@
         "fr": "Compte MyElectricalData"
       },
       "description": {
-        "en": "Unofficial connector, not affiliated with Enedis nor with MyElectricalData. MyElectricalData is a free community gateway to the Enedis data of your Linky meter: give your Enedis consent on myelectricaldata.fr, then copy the token it gives you. The integration reads once a day the days not yet published (daily consumption, and on request the 30-minute load curve, the daily peak power and the production) and the off-peak hours of your meter. Read-only. Then create an energy contract from the \"Linky peak / off-peak (hours of the meter)\" template: its off-peak slots follow the real hours of your meter.",
-        "fr": "Connecteur non officiel, sans lien avec Enedis ni avec MyElectricalData. MyElectricalData est une passerelle communautaire gratuite vers les données Enedis de votre compteur Linky : donnez votre consentement Enedis sur myelectricaldata.fr, puis copiez le jeton qu'il vous donne. L'intégration lit une fois par jour les jours pas encore publiés (consommation du jour, et sur demande la courbe de charge par demi-heure, la puissance max du jour et la production) et les heures creuses de votre compteur. Lecture seule. Créez ensuite un contrat d'énergie depuis le modèle « Linky heures pleines / creuses (plages du compteur) » : ses heures creuses suivent les vraies plages de votre compteur."
+        "en": "Unofficial connector, not affiliated with Enedis nor with MyElectricalData. MyElectricalData is a free community gateway to the Enedis data of your Linky meter: give your Enedis consent on myelectricaldata.fr, then copy the token it gives you. The integration reads once a day the days not yet published (daily consumption, or on request the 30-minute load curve; the daily peak power and the production) and the off-peak hours of your meter. Read-only. Then create an energy contract from the \"Linky peak / off-peak (hours of the meter)\" template: its off-peak slots follow the real hours of your meter (it needs the load curve option).",
+        "fr": "Connecteur non officiel, sans lien avec Enedis ni avec MyElectricalData. MyElectricalData est une passerelle communautaire gratuite vers les données Enedis de votre compteur Linky : donnez votre consentement Enedis sur myelectricaldata.fr, puis copiez le jeton qu'il vous donne. L'intégration lit une fois par jour les jours pas encore publiés (consommation du jour, ou sur demande la courbe de charge par demi-heure ; la puissance max du jour et la production) et les heures creuses de votre compteur. Lecture seule. Créez ensuite un contrat d'énergie depuis le modèle « Linky heures pleines / creuses (plages du compteur) » : ses heures creuses suivent les vraies plages de votre compteur (il exige l'option courbe de charge)."
       },
       "links": [
         {
@@ -70,8 +70,8 @@
       "default": false,
       "label": { "en": "30-minute load curve", "fr": "Courbe de charge par demi-heure" },
       "description": {
-        "en": "Reads the consumption of every half hour (the last 7 days at most): needs the load curve collection enabled for your meter (Enedis customer area). One more request a day.",
-        "fr": "Lit la consommation de chaque demi-heure (les 7 derniers jours au plus) : il faut que la collecte de la courbe de charge soit activée pour votre compteur (espace client Enedis). Une requête de plus par jour."
+        "en": "Reads the consumption of every half hour instead of the day total (the last 7 days at most): REQUIRED by the \"Linky peak / off-peak\" contract template. Needs the load curve collection enabled for your meter (Enedis customer area).",
+        "fr": "Lit la consommation de chaque demi-heure au lieu du total du jour (les 7 derniers jours au plus) : OBLIGATOIRE pour le modèle de contrat « Linky heures pleines / creuses ». Il faut que la collecte de la courbe de charge soit activée pour votre compteur (espace client Enedis)."
       }
     },
     {
@@ -117,8 +117,8 @@
           "fr": "Linky heures pleines / creuses (plages du compteur)"
         },
         "description": {
-          "en": "Peak and off-peak prices that you enter; the off-peak half hours are the real ones of your meter, read every day from its Enedis contract (they follow the 2025-2027 Enedis changes by themselves). A half hour is off-peak when its middle minute (xx:15 or xx:45) is. Days without calendar are priced at the peak price.",
-          "fr": "Prix heures pleines et heures creuses que vous saisissez ; les demi-heures creuses sont les vraies de votre compteur, lues chaque jour dans son contrat Enedis (elles suivent d'elles-mêmes les changements Enedis 2025-2027). Une demi-heure est creuse quand sa minute du milieu (xx:15 ou xx:45) l'est. Les jours sans calendrier sont comptés au prix des heures pleines."
+          "en": "Peak and off-peak prices you enter; the off-peak half hours are the real ones of your meter, read every day from its Enedis contract (they follow the 2025-2027 Enedis changes). Needs the load curve option: a daily consumption cannot be split into peak and off-peak (it is held while this contract is in force). A half hour is off-peak when its middle minute (xx:15 or xx:45) is. Days without calendar are priced at the peak price.",
+          "fr": "Prix HP et HC que vous saisissez ; les demi-heures creuses sont les vraies de votre compteur, lues chaque jour dans son contrat Enedis (elles suivent les changements Enedis 2025-2027). Exige l'option courbe de charge : une consommation du jour ne se répartit pas en HP/HC (elle est retenue tant que ce contrat est en vigueur). Une demi-heure est creuse quand sa minute du milieu (xx:15 ou xx:45) l'est. Les jours sans calendrier sont comptés au prix HP."
         },
         "country": "FR",
         "currency": "EUR",

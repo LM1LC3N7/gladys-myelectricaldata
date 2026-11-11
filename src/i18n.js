@@ -93,8 +93,16 @@ const TEXTS = {
     fr: ' Gladys n’a pas pris le calendrier des heures creuses : nouvel essai à la prochaine lecture du jour.',
   },
   storage: {
-    en: ' /data cannot be read: the days already published and the daily count of requests are not kept.',
-    fr: ' /data est illisible : les jours déjà publiés et le compte quotidien des requêtes ne sont pas gardés.',
+    en: ' /data cannot be read or written: the days already published and the daily count of requests are not kept; reads wait an hour after a start.',
+    fr: ' /data ne peut pas être lu ou écrit : les jours déjà publiés et le compte quotidien des requêtes ne sont pas gardés ; les lectures attendent une heure après un démarrage.',
+  },
+  devicesUnread: {
+    en: ' The devices could not be read from Gladys: tried again soon, nothing is published meanwhile.',
+    fr: ' Les appareils n’ont pas pu être lus depuis Gladys : nouvel essai bientôt, rien n’est publié d’ici là.',
+  },
+  dailyHeld: {
+    en: ' A "Linky peak / off-peak" contract needs the 30-minute load curve: the daily consumption is held (Gladys would price each whole day at the price of its first half hour). Enable the load curve option.',
+    fr: ' Un contrat « Linky heures pleines / creuses » a besoin de la courbe de charge par demi-heure : la consommation du jour est retenue (Gladys compterait chaque journée entière au prix de sa première demi-heure). Activez l’option courbe de charge.',
   },
   configUnread: {
     en: 'The configuration could not be read from Gladys: next try soon.',

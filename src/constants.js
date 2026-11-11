@@ -77,6 +77,10 @@ export const BACKFILL_DAYS = 365;
 export const CURVE_DAYS = 7;
 /** The production and the peak power go through the states: 31 days at most. */
 export const STATE_BACKFILL_DAYS = 31;
+/** The SDK takes at most 100 states per publishStates. */
+export const MAX_STATES_PER_REQUEST = 100;
+/** A day missing in an answer is asked again; missing this many days back, it is given up. */
+export const HOLE_WAIT_DAYS = 5;
 /** The states published per minute, every publication of the integration included. */
 export const STATES_PER_MINUTE = 250;
 /** The off-peak calendar is published from today to this many days ahead (the core takes 7). */
