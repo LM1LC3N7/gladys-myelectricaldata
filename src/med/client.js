@@ -129,6 +129,7 @@ export class MedSession {
     sleep,
     timeout,
     gap = REQUEST_GAP,
+    onError,
   }) {
     this.token = token;
     this.fetchImpl = fetchImpl;
@@ -137,6 +138,7 @@ export class MedSession {
     this.sleep = sleep;
     this.timeout = timeout;
     this.gap = gap;
+    this.onError = onError;
     this.lane = Promise.resolve();
     this.lastSent = -Infinity;
     this.abort = new AbortController();
@@ -175,6 +177,10 @@ export class MedSession {
           signal: this.abort.signal,
           ...(this.timeout ? { timeout: this.timeout } : {}),
         });
+      } catch (err) {
+        // Told before the next request of the queue runs (a 429 holds them all).
+        this.onError?.(err);
+        throw err;
       } finally {
         // The gap counts from the end of a request: a slow answer never shortens it.
         this.lastSent = this.monotonic();

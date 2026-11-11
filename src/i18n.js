@@ -6,7 +6,7 @@
 
 const TEXTS = {
   devicePdl: { en: 'Linky meter …{suffix}', fr: 'Compteur Linky …{suffix}' },
-  featureDaily: { en: 'Daily consumption', fr: 'Consommation du jour' },
+  featureDaily: { en: 'Energy of the day', fr: 'Énergie du jour' },
   featureCurve: { en: 'Consumption (30 min)', fr: 'Consommation (30 min)' },
   featureMaxPower: { en: 'Daily peak power', fr: 'Puissance max du jour' },
   featureProduction: { en: 'Daily production', fr: 'Production du jour' },
@@ -100,9 +100,13 @@ const TEXTS = {
     en: ' The devices could not be read from Gladys: tried again soon, nothing is published meanwhile.',
     fr: ' Les appareils n’ont pas pu être lus depuis Gladys : nouvel essai bientôt, rien n’est publié d’ici là.',
   },
-  dailyHeld: {
-    en: ' A "Linky peak / off-peak" contract needs the 30-minute load curve: the daily consumption is held (Gladys would price each whole day at the price of its first half hour). Enable the load curve option.',
-    fr: ' Un contrat « Linky heures pleines / creuses » a besoin de la courbe de charge par demi-heure : la consommation du jour est retenue (Gladys compterait chaque journée entière au prix de sa première demi-heure). Activez l’option courbe de charge.',
+  noCost: {
+    en: ' No cost is computed: only the 30-minute load curve feeds the energy contracts of Gladys (the days are shown only). Tick the load curve option for a contract.',
+    fr: ' Aucun coût n’est calculé : seule la courbe de charge par demi-heure alimente les contrats d’énergie de Gladys (les jours sont seulement affichés). Cochez l’option courbe de charge pour un contrat.',
+  },
+  updateDevice: {
+    en: ' Meter …{suffix}: an option asks for a feature the device does not have yet: update the device in Discovery (nothing is removed).',
+    fr: ' Compteur …{suffix} : une option demande une fonction que l’appareil n’a pas encore : mettez l’appareil à jour dans Découverte (rien n’est retiré).',
   },
   configUnread: {
     en: 'The configuration could not be read from Gladys: next try soon.',

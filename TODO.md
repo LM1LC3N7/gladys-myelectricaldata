@@ -3,7 +3,7 @@
 ## Before announcing
 
 - [ ] Test on a real Gladys 5.2+ with a real Linky meter and a MyElectricalData
-      token: Test button, Discovery, the year of daily consumption, a contract
+      token: Test button, Discovery, the 31 days of energy per day, a contract
       from the template priced with the calendar, a day later.
 - [ ] Turn on "Private vulnerability reporting" (SECURITY.md points there).
 - [ ] Add the `gladys-assistant-integration` topic to publish in the store
@@ -56,10 +56,12 @@
   (`id_key`, as gladys-octopus-germany); the name shows the last 4 digits.
 - Refusal only when the contract of every meter answers 401/403 in one read;
   lifted by Test, a new token or new meter numbers.
-- Review r1: the HP/HC template needs the load curve (a daily consumption is
-  priced by the core at its midnight half hour): the daily consumption is held
-  while a contract of the template is in force (or the contracts cannot be
-  read); one consumption feature per device (curve or days). A 5xx on one
-  route waits for that route only; the gateway is paused when nothing
-  answered. Dated states by batches of 100, catch-up bounded to 31 days.
+- Review r2 (coordinator's design): the energy of each day is a dated state
+  of type `index-yesterday`, shown only, never priced (the core would price a
+  daily consumption as one interval at the price of its midnight half hour);
+  only the 30-minute load curve goes through publishEnergyConsumption, so the
+  HP/HC template needs it and without it no cost is computed. Discovery keeps
+  every created feature (options never remove one). A 5xx on one route waits
+  for that route only; the gateway is paused when nothing answered and several
+  routes (or a contract) failed. Dated states by batches of 100.
 - Gladys `>=5.2.0` (publishEnergyConsumption and the energy contracts).

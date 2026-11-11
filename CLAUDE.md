@@ -14,7 +14,7 @@ its only runtime dependency. It started from the official JavaScript template.
 It reads the **Linky** meters (PDL) of Enedis through the public API of the
 community gateway **MyElectricalData** (`www.myelectricaldata.fr`, Swagger at
 `/docs`, the user's token in `Authorization`): the contract data (off-peak
-hours, subscribed power), the daily consumption, the load curve, the daily
+hours, subscribed power), the energy of each day (shown only), the load curve (the only data priced), the daily
 peak power and production. It feeds the `linky-offpeak` tariff calendar and
 ships the `linky-peak-offpeak` contract template (rules mode). **Read-only.**
 Unofficial: not affiliated with Enedis nor MyElectricalData. Written from the

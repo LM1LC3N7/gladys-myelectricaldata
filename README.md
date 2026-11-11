@@ -6,8 +6,9 @@ Unofficial [Gladys Assistant](https://gladysassistant.com) integration for the
 Enedis nor with MyElectricalData. With the token the gateway gives once your
 Enedis consent is done, it reads for each meter (PDL):
 
-- the daily consumption and, on request, the 30-minute load curve, published
-  as dated consumption for the Gladys energy monitoring;
+- the energy of each day, shown on the device only (never priced), and on
+  request the 30-minute load curve, the only data that feeds the Gladys
+  energy costs;
 - on request, the daily peak power and the daily production;
 - the off-peak hours of the meter, which feed the `linky-offpeak` tariff
   calendar of the contract template **Linky peak / off-peak (hours of the

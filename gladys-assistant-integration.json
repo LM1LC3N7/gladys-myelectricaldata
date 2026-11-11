@@ -21,17 +21,23 @@
         "fr": "Compte MyElectricalData"
       },
       "description": {
-        "en": "Unofficial connector, not affiliated with Enedis nor with MyElectricalData. MyElectricalData is a free community gateway to the Enedis data of your Linky meter: give your Enedis consent on myelectricaldata.fr, then copy the token it gives you. The integration reads once a day the days not yet published (daily consumption, or on request the 30-minute load curve; the daily peak power and the production) and the off-peak hours of your meter. Read-only. Then create an energy contract from the \"Linky peak / off-peak (hours of the meter)\" template: its off-peak slots follow the real hours of your meter (it needs the load curve option).",
-        "fr": "Connecteur non officiel, sans lien avec Enedis ni avec MyElectricalData. MyElectricalData est une passerelle communautaire gratuite vers les données Enedis de votre compteur Linky : donnez votre consentement Enedis sur myelectricaldata.fr, puis copiez le jeton qu'il vous donne. L'intégration lit une fois par jour les jours pas encore publiés (consommation du jour, ou sur demande la courbe de charge par demi-heure ; la puissance max du jour et la production) et les heures creuses de votre compteur. Lecture seule. Créez ensuite un contrat d'énergie depuis le modèle « Linky heures pleines / creuses (plages du compteur) » : ses heures creuses suivent les vraies plages de votre compteur (il exige l'option courbe de charge)."
+        "en": "Unofficial connector, not affiliated with Enedis nor with MyElectricalData. MyElectricalData is a free community gateway to the Enedis data of your Linky meter: give your Enedis consent on myelectricaldata.fr, then copy the token it gives you. The integration reads once a day the days not yet published (energy of each day, shown only; on request the 30-minute load curve, the only data that feeds the energy costs; the daily peak power and the production) and the off-peak hours of your meter. Read-only. For an energy contract, tick the load curve, then create it from the \"Linky peak / off-peak (hours of the meter)\" template: its off-peak slots follow the real hours of your meter.",
+        "fr": "Connecteur non officiel, sans lien avec Enedis ni avec MyElectricalData. MyElectricalData est une passerelle communautaire gratuite vers les données Enedis de votre compteur Linky : donnez votre consentement Enedis sur myelectricaldata.fr, puis copiez le jeton qu'il vous donne. L'intégration lit une fois par jour les jours pas encore publiés (énergie de chaque jour, affichée seulement ; sur demande la courbe de charge par demi-heure, seule donnée qui alimente les coûts ; la puissance max du jour et la production) et les heures creuses de votre compteur. Lecture seule. Pour un contrat d'énergie, cochez la courbe de charge, puis créez-le depuis le modèle « Linky heures pleines / creuses (plages du compteur) » : ses heures creuses suivent les vraies plages de votre compteur."
       },
       "links": [
         {
           "url": "https://github.com/LM1LC3N7/gladys-myelectricaldata/blob/main/docs/fr.md",
-          "label": { "en": "Guide (French)", "fr": "Guide (français)" }
+          "label": {
+            "en": "Guide (French)",
+            "fr": "Guide (français)"
+          }
         },
         {
           "url": "https://github.com/LM1LC3N7/gladys-myelectricaldata/blob/main/docs/en.md",
-          "label": { "en": "Guide (English)", "fr": "Guide (anglais)" }
+          "label": {
+            "en": "Guide (English)",
+            "fr": "Guide (anglais)"
+          }
         },
         {
           "url": "https://www.myelectricaldata.fr/",
@@ -46,7 +52,10 @@
       "key": "token",
       "type": "secret",
       "required": true,
-      "label": { "en": "MyElectricalData token", "fr": "Jeton MyElectricalData" },
+      "label": {
+        "en": "MyElectricalData token",
+        "fr": "Jeton MyElectricalData"
+      },
       "description": {
         "en": "The token myelectricaldata.fr gives once the Enedis consent is done. Kept by Gladys in its database, never shown again, sent only to MyElectricalData (www.myelectricaldata.fr).",
         "fr": "Le jeton que myelectricaldata.fr donne une fois le consentement Enedis donné. Gardé par Gladys dans sa base, jamais réaffiché, envoyé seulement à MyElectricalData (www.myelectricaldata.fr)."
@@ -56,22 +65,31 @@
       "key": "usage_points",
       "type": "string",
       "required": true,
-      "label": { "en": "Meter number(s) (PDL)", "fr": "Numéro(s) de compteur (PDL)" },
+      "label": {
+        "en": "Meter number(s) (PDL)",
+        "fr": "Numéro(s) de compteur (PDL)"
+      },
       "description": {
         "en": "The 14 digits of your PDL (on your bill, or on the Linky screen), leading zeros kept; several separated by commas (5 at most). The off-peak calendar follows the first one. Sent only to MyElectricalData; Gladys shows its last 4 digits only.",
         "fr": "Les 14 chiffres de votre PDL (sur votre facture, ou l'écran du Linky), zéros du début gardés ; plusieurs séparés par des virgules (5 au plus). Le calendrier des heures creuses suit le premier. Envoyé seulement à MyElectricalData ; Gladys n'en montre que les 4 derniers chiffres."
       },
-      "placeholder": { "en": "e.g. 01234567890123", "fr": "ex. 01234567890123" }
+      "placeholder": {
+        "en": "e.g. 01234567890123",
+        "fr": "ex. 01234567890123"
+      }
     },
     {
       "key": "load_curve",
       "type": "boolean",
       "required": false,
       "default": false,
-      "label": { "en": "30-minute load curve", "fr": "Courbe de charge par demi-heure" },
+      "label": {
+        "en": "30-minute load curve",
+        "fr": "Courbe de charge par demi-heure"
+      },
       "description": {
-        "en": "Reads the consumption of every half hour instead of the day total (the last 7 days at most): REQUIRED by the \"Linky peak / off-peak\" contract template. Needs the load curve collection enabled for your meter (Enedis customer area).",
-        "fr": "Lit la consommation de chaque demi-heure au lieu du total du jour (les 7 derniers jours au plus) : OBLIGATOIRE pour le modèle de contrat « Linky heures pleines / creuses ». Il faut que la collecte de la courbe de charge soit activée pour votre compteur (espace client Enedis)."
+        "en": "Reads the consumption of every half hour (from 7 days back): the only data that feeds the energy costs of Gladys, REQUIRED for any energy contract. Needs the load curve collection enabled for your meter (Enedis customer area). Adds a feature: update the device in Discovery (nothing is removed).",
+        "fr": "Lit la consommation de chaque demi-heure (à partir de 7 jours en arrière) : seule donnée qui alimente les coûts de Gladys, OBLIGATOIRE pour tout contrat d'énergie. Il faut que la collecte de la courbe de charge soit activée pour votre compteur (espace client Enedis). Ajoute une fonction : mettez l'appareil à jour dans Découverte (rien n'est retiré)."
       }
     },
     {
@@ -79,7 +97,10 @@
       "type": "boolean",
       "required": false,
       "default": true,
-      "label": { "en": "Daily peak power", "fr": "Puissance max du jour" },
+      "label": {
+        "en": "Daily peak power",
+        "fr": "Puissance max du jour"
+      },
       "description": {
         "en": "Reads the highest power (VA) reached each day. One more request a day.",
         "fr": "Lit la puissance la plus haute (VA) atteinte chaque jour. Une requête de plus par jour."
@@ -90,7 +111,10 @@
       "type": "boolean",
       "required": false,
       "default": false,
-      "label": { "en": "Daily production", "fr": "Production du jour" },
+      "label": {
+        "en": "Daily production",
+        "fr": "Production du jour"
+      },
       "description": {
         "en": "Only for a meter that also counts a production (solar panels): reads the energy produced each day. One more request a day.",
         "fr": "Seulement pour un compteur qui compte aussi une production (panneaux solaires) : lit l'énergie produite chaque jour. Une requête de plus par jour."
@@ -101,7 +125,10 @@
     {
       "key": "test_connection",
       "timeout_seconds": 120,
-      "label": { "en": "Test the access", "fr": "Tester l'accès" },
+      "label": {
+        "en": "Test the access",
+        "fr": "Tester l'accès"
+      },
       "description": {
         "en": "Checks the access of every meter on the gateway (consent, quota); at most once a minute.",
         "fr": "Vérifie l'accès de chaque compteur sur la passerelle (consentement, quota) ; au plus une fois par minute."
@@ -117,8 +144,8 @@
           "fr": "Linky heures pleines / creuses (plages du compteur)"
         },
         "description": {
-          "en": "Peak and off-peak prices you enter; the off-peak half hours are the real ones of your meter, read every day from its Enedis contract (they follow the 2025-2027 Enedis changes). Needs the load curve option: a daily consumption cannot be split into peak and off-peak (it is held while this contract is in force). A half hour is off-peak when its middle minute (xx:15 or xx:45) is. Days without calendar are priced at the peak price.",
-          "fr": "Prix HP et HC que vous saisissez ; les demi-heures creuses sont les vraies de votre compteur, lues chaque jour dans son contrat Enedis (elles suivent les changements Enedis 2025-2027). Exige l'option courbe de charge : une consommation du jour ne se répartit pas en HP/HC (elle est retenue tant que ce contrat est en vigueur). Une demi-heure est creuse quand sa minute du milieu (xx:15 ou xx:45) l'est. Les jours sans calendrier sont comptés au prix HP."
+          "en": "Peak and off-peak prices you enter; the off-peak half hours are the real ones of your meter, read every day from its Enedis contract (they follow the 2025-2027 Enedis changes). Needs the load curve option: without it, no cost is computed (the days are shown only). A half hour is off-peak when its middle minute (xx:15 or xx:45) is. Days without calendar are priced at the peak price.",
+          "fr": "Prix HP et HC que vous saisissez ; les demi-heures creuses sont les vraies de votre compteur, lues chaque jour dans son contrat Enedis (elles suivent les changements Enedis 2025-2027). Exige l'option courbe de charge : sans elle, aucun coût n'est calculé (les jours sont seulement affichés). Une demi-heure est creuse quand sa minute du milieu (xx:15 ou xx:45) l'est. Les jours sans calendrier sont comptés au prix HP."
         },
         "country": "FR",
         "currency": "EUR",
@@ -132,7 +159,10 @@
             "type": "number",
             "unit": "EUR/kWh",
             "required": true,
-            "label": { "en": "Peak hours price per kWh", "fr": "Prix du kWh en heures pleines" },
+            "label": {
+              "en": "Peak hours price per kWh",
+              "fr": "Prix du kWh en heures pleines"
+            },
             "description": {
               "en": "Taxes included, as on your bill.",
               "fr": "Toutes taxes comprises, comme sur votre facture."
@@ -157,7 +187,10 @@
             "type": "number",
             "unit": "EUR/month",
             "default": 0,
-            "label": { "en": "Subscription per month", "fr": "Abonnement par mois" },
+            "label": {
+              "en": "Subscription per month",
+              "fr": "Abonnement par mois"
+            },
             "description": {
               "en": "Taxes included.",
               "fr": "Toutes taxes comprises."
@@ -174,11 +207,18 @@
               "rules": [
                 {
                   "label": "HC",
-                  "when": { "calendar": { "linky-offpeak": "offpeak" } },
+                  "when": {
+                    "calendar": {
+                      "linky-offpeak": "offpeak"
+                    }
+                  },
                   "price": "{{input:price_offpeak}}"
                 }
               ],
-              "fallback": { "label": "HP", "price": "{{input:price_peak}}" }
+              "fallback": {
+                "label": "HP",
+                "price": "{{input:price_peak}}"
+              }
             },
             {
               "key": "subscription",

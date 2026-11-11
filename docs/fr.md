@@ -9,9 +9,10 @@ Intégration non officielle, sans lien avec Enedis ni avec MyElectricalData.
 [MyElectricalData](https://www.myelectricaldata.fr/) est une passerelle communautaire gratuite vers les
 données Enedis de votre compteur Linky. Cette intégration lit, pour chaque compteur (PDL) saisi :
 
-- la **consommation du jour** (kWh), publiée dans le suivi énergétique de Gladys, ou sur demande la
-  **consommation par demi-heure** (courbe de charge) à sa place (jamais les deux : une consommation n'est
-  comptée qu'une fois) ;
+- l'**énergie de chaque jour** (kWh), affichée sur l'appareil (une valeur datée par jour) : elle
+  n'alimente jamais les coûts de Gladys ;
+- sur demande, la **consommation par demi-heure** (courbe de charge) : seule donnée qui alimente les coûts
+  du suivi énergétique et les contrats d'énergie ;
 - sur demande, la **puissance max du jour** (VA) et la **production du jour** (panneaux solaires) ;
 - les **heures creuses** du compteur (son contrat Enedis), qui alimentent le calendrier tarifaire
   `linky-offpeak` du modèle de contrat « Linky heures pleines / creuses (plages du compteur) ».
@@ -34,8 +35,8 @@ Lecture seule : rien n'est jamais modifié sur votre compte ni sur votre compteu
 3. Appuyez sur **Tester l'accès** : pour chaque compteur, la passerelle indique si l'accès est valide,
    jusqu'à quand court le consentement et combien d'appels elle a comptés.
 4. Dans **Découverte**, créez l'appareil « Compteur Linky …1234 » (seuls les 4 derniers chiffres du PDL
-   sont montrés). Ses données sont lues une minute plus tard : un an de consommation du jour (ou 7 jours
-   de courbe de charge), 31 jours de puissance max et de production.
+   sont montrés). Ses données sont lues une minute plus tard : 31 jours d'énergie par jour, de puissance
+   max et de production, 7 jours de courbe de charge.
 
 ## Le contrat d'énergie avec les vraies heures creuses
 
@@ -43,13 +44,17 @@ Créez un contrat d'énergie sur le compteur Linky depuis le modèle **« Linky 
 (plages du compteur) »** et saisissez vos prix du kWh en heures pleines et en heures creuses (toutes taxes
 comprises) et votre abonnement mensuel.
 
-**Ce modèle exige l'option « courbe de charge par demi-heure ».** Gladys tarife une consommation du jour
-comme un seul intervalle daté de minuit : elle prendrait le prix de la première demi-heure du jour pour
-la journée entière (tout en heures creuses avec 22h-6h, tout en heures pleines avec 2h-7h). Donc, sans la
-courbe de charge, tant qu'un contrat fait depuis ce modèle est en vigueur, la consommation du jour est
-**retenue** (ni demandée ni publiée) et le statut vous demande d'activer la courbe de charge. Avec la
-courbe, chaque demi-heure est comptée à son propre prix. Sans contrat fait depuis ce modèle, la
-consommation du jour est publiée normalement (pour un contrat à prix unique).
+**Ce modèle exige l'option « courbe de charge par demi-heure ».** Seules les demi-heures alimentent les
+coûts : Gladys tarifierait un total du jour comme un seul intervalle daté de minuit, au prix de la
+première demi-heure du jour (tout en heures creuses avec 22h-6h) ; l'énergie de chaque jour est donc
+publiée pour l'affichage seulement. Sans la courbe de charge, **aucun coût n'est calculé**, et le statut
+le dit. Avec elle, chaque demi-heure est comptée à son propre prix.
+
+Cocher ou décocher l'option ne retire jamais une fonction : l'appareil proposé dans Découverte garde
+toutes les fonctions déjà créées (et leur historique). La cocher ajoute la fonction par demi-heure :
+mettez l'appareil à jour dans Découverte (le statut le rappelle) ; l'énergie des jours continue d'ici là,
+aucun jour n'est perdu. La courbe de charge commence 7 jours en arrière (la limite Enedis d'une
+requête).
 
 Vous ne saisissez pas les demi-heures creuses : elles viennent des données contractuelles de votre
 compteur, lues chaque jour. Avec les changements Enedis de 2025-2027 (une partie des heures creuses passe
@@ -84,21 +89,26 @@ La passerelle est un service gratuit : l'intégration demande peu.
 - 12 requêtes au plus par compteur et par jour, comptées avant chaque requête et gardées dans `/data` (un
   redémarrage ne remet pas le compte à zéro).
 - Une réponse « ralentissez » (429) met toutes les requêtes en pause, le temps demandé (sinon 1 heure, puis
-  2, 4, jusqu'à 6 heures). Une erreur de la passerelle (5xx) sur une route d'un compteur (courbe de charge
-  non collectée, par exemple) fait attendre cette route 15 minutes, doublées jusqu'à 6 heures : les autres
+  2, 4, jusqu'à 6 heures) ; une requête déjà en file est retenue aussi. Une erreur de la passerelle (5xx)
+  sur une route d'un compteur (courbe de charge non collectée, par exemple) fait attendre cette route :
+  elle est réessayée à la lecture ordinaire suivante, jamais avant 15 minutes (doublées jusqu'à 6 heures,
+  revenues à 15 minutes après un succès), et le statut donne l'heure réelle de cette lecture. Les autres
   routes et compteurs continuent, et chaque lecture commence par un autre compteur. Quand rien n'a
-  répondu, toutes les requêtes sont en pause (15 minutes, doublées jusqu'à 6 heures). Une pause est gardée
-  au redémarrage ; celle qui finit la nuit attend la lecture du matin.
+  répondu et que plusieurs routes (ou un contrat) sont en erreur, toutes les requêtes sont en pause
+  (15 minutes, doublées jusqu'à 6 heures). Une pause est gardée au redémarrage ; celle qui finit la nuit
+  attend la lecture du matin.
 - Une requête en file quand une pause commence n'est pas envoyée.
 - Le bouton de test demande une fois par compteur, au plus une fois par minute.
 
 ## Ce qui est publié, et quand
 
-- **Consommation du jour** : chaque jour une fois, par la consommation datée de Gladys (pas d'index : rien
-  ne peut baisser). Un jour corrigé plus tard par Enedis n'est pas republié. Un jour absent d'une réponse
-  arrête la publication à cet endroit : lui et les jours suivants sont redemandés à la lecture suivante
-  (Enedis est parfois en retard) ; un jour toujours absent 5 jours plus tard est abandonné.
-- **Consommation par demi-heure** : jours entiers seulement (chaque demi-heure du jour connue une fois) ;
+- **Énergie du jour** : chaque jour une fois, une valeur datée (minuit local) affichée sur l'appareil,
+  jamais tarifée (pas d'index : rien ne peut baisser). Un jour corrigé plus tard par Enedis n'est pas
+  republié. Après un arrêt, 92 jours au plus sont rattrapés. Un jour absent d'une réponse arrête la
+  publication à cet endroit : lui et les jours suivants sont redemandés à la lecture suivante (Enedis est
+  parfois en retard) ; un jour toujours absent 5 jours plus tard est abandonné.
+- **Consommation par demi-heure** : seule consommation envoyée aux coûts (consommation datée de Gladys) ;
+  jours entiers seulement (chaque demi-heure du jour connue une fois) ;
   une courbe horaire est coupée en deux moitiés, une courbe à 10 ou 15 minutes additionnée. Les 7 derniers
   jours au plus (la limite Enedis d'une requête) : un trou plus long n'est pas comblé.
 - **Puissance max et production** : états datés (l'heure du pic ; minuit local pour la production), par
@@ -112,7 +122,8 @@ La passerelle est un service gratuit : l'intégration demande peu.
 
 - **Refus** : quand le contrat de **chaque** compteur reçoit 401 ou 403 dans la même lecture, le jeton est
   tenu pour refusé : plus aucune requête n'est envoyée, jusqu'à un **Tester l'accès** réussi ou un
-  changement du jeton ou des numéros de compteur (un PDL mal saisi est refusé lui aussi). Un 401/403 sur une route de données, ou sur un seul compteur, n'est pas un refus (le statut nomme
+  changement du jeton ou des numéros de compteur, même intégration arrêtée (un PDL mal saisi est refusé
+  lui aussi). Un 401/403 sur une route de données, ou sur un seul compteur, n'est pas un refus (le statut nomme
   le compteur et la route).
 - Le jeton et le numéro de PDL ne sont jamais écrits dans les journaux, le statut ni `/data`. `/data` garde
   une empreinte à clé de chaque compteur, le dernier jour publié par sorte de donnée, les heures creuses
@@ -121,15 +132,15 @@ La passerelle est un service gratuit : l'intégration demande peu.
   (hors formulaire).
 - Les appareils non lus depuis Gladys au démarrage : nouvel essai 30 secondes plus tard (doublé jusqu'à
   5 minutes) ; le statut le dit et rien n'est publié d'ici là.
-- `/data` illisible ou non inscriptible : les lectures attendent une heure après un démarrage (le compte
-  du jour n'est pas sûr) et le statut le dit.
+- `/data` illisible, ou dont l'écriture échoue : les lectures attendent une heure après un démarrage (le
+  compte du jour n'est pas sûr) et le statut le dit. Une écriture lente qui aboutit ne compte pas.
 
 ## Limites
 
 - Jamais testée avec un vrai compteur ; l'horodatage de la courbe de charge (fin de chaque intervalle,
   comme Enedis le documente) est vérifié sur chaque réponse, pas sur des données réelles.
 - Les jours avant l'installation sont comptés au prix des heures pleines par le modèle.
-- Le modèle exige la courbe de charge : un compteur sans collecte de courbe ne peut pas l'utiliser.
+- Le modèle exige la courbe de charge : un compteur sans collecte de courbe n'a aucun coût calculé.
 - Plusieurs compteurs : le calendrier suit le premier seulement.
 
 ## Données

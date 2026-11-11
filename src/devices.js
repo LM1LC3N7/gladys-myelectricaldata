@@ -9,9 +9,10 @@
 //                              a log, a status or /data). The device name
 //                              shows its last 4 digits only.
 //
-// Features: the daily consumption, or the 30-minute consumption (load curve)
-// when asked (never both: a consumption is priced once), fed by
-// publishEnergyConsumption (dated intervals, never an index); the daily production and the daily peak power, dated states.
+// Features: the energy of each day (dated states, shown only, never priced),
+// the 30-minute consumption when the load curve is asked (the only feature
+// fed by publishEnergyConsumption, so the only one priced), the daily
+// production and the daily peak power (dated states). Never an index.
 // -----------------------------------------------------------------------------
 
 import {
@@ -58,22 +59,23 @@ const sensor = (ids, key, name, category, type, unit, max) => ({
  */
 export function buildPdlDevice(gladys, meter, options, language = 'en') {
   const ids = idsOf(gladys, meter.key);
-  const features = [];
-  // One consumption feature only (never priced twice): the half hours when
-  // the load curve is read, the days otherwise.
-  if (!options.loadCurve) {
-    features.push(
-      sensor(
-        ids,
-        FEATURE.DAILY,
-        t('featureDaily', language),
-        C.ENERGY_SENSOR,
-        T.ENERGY_SENSOR.DAILY_CONSUMPTION,
-        U.KILOWATT_HOUR,
-        MAX_DAY_KWH,
-      ),
-    );
-  } else {
+  // The energy of each day: shown only (a dated state of the
+  // `index-yesterday` type, the energy of one past day), never a
+  // consumption the costs of Gladys read: a day priced as one interval would
+  // take the price of its first half hour. Always there, whatever the options.
+  const features = [
+    sensor(
+      ids,
+      FEATURE.DAILY,
+      t('featureDaily', language),
+      C.ENERGY_SENSOR,
+      T.ENERGY_SENSOR.INDEX_YESTERDAY,
+      U.KILOWATT_HOUR,
+      MAX_DAY_KWH,
+    ),
+  ];
+  // The half hours: the only consumption fed to the costs (energy contracts).
+  if (options.loadCurve) {
     features.push(
       sensor(
         ids,

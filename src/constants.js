@@ -71,11 +71,11 @@ export const MAX_TIMER = HOUR;
 
 // --- History ----------------------------------------------------------------------
 
-/** A new daily feature gets this many days back (one request). */
-export const BACKFILL_DAYS = 365;
+/** After a stop, the energy of the days is caught up this many days back at most. */
+export const BACKFILL_DAYS = 92;
 /** A new load curve feature: 7 days (the Enedis limit of one request). */
 export const CURVE_DAYS = 7;
-/** The production and the peak power go through the states: 31 days at most. */
+/** A new feature of days (energy, production, peak power) gets 31 days back. */
 export const STATE_BACKFILL_DAYS = 31;
 /** The SDK takes at most 100 states per publishStates. */
 export const MAX_STATES_PER_REQUEST = 100;

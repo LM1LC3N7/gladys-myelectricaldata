@@ -41,11 +41,18 @@ async function createAll(env) {
   for (const d of structuredClone(env.fake.discoveredDevices)) await env.fake.deviceCreated(d);
 }
 
-/** Every date ever published to a daily feature, in order. */
+/**
+ * Every day (local date) ever published to the energy of the day (dated
+ * states), in order; for the 30-minute consumption, every slot start.
+ */
 const dailyDates = (env, feature = F('daily_consumption')) =>
-  env.fake.publishedEnergyConsumption
-    .filter((b) => b.device_feature_external_id === feature)
-    .flatMap((b) => b.intervals.map((i) => i.date ?? i.starts_at));
+  feature.endsWith(':consumption')
+    ? env.fake.publishedEnergyConsumption
+        .filter((b) => b.device_feature_external_id === feature)
+        .flatMap((b) => b.intervals.map((i) => i.starts_at))
+    : env.fake.states
+        .filter((s) => s.device_feature_external_id === feature)
+        .map((s) => localDate(Date.parse(s.created_at)));
 
 test('start: the contract read at once; Discovery, calendar, status; nothing secret written', async (t) => {
   const env = await started();
@@ -81,7 +88,7 @@ test('start: the contract read at once; Discovery, calendar, status; nothing sec
   }
 });
 
-test('a created device: read a minute later, a year of days; every day published once', async (t) => {
+test('a created device: read a minute later, 31 days back; every day published once', async (t) => {
   const env = await started();
   t.after(() => env.app.stop());
   await createAll(env);
@@ -90,12 +97,19 @@ test('a created device: read a minute later, a year of days; every day published
   await env.wait(MINUTE);
   assert.deepEqual(env.med.ops(), ['contracts', 'daily', 'maxPower']);
   const daily = env.med.calls[1];
-  assert.deepEqual([daily.start, daily.end], ['2025-11-11', '2026-11-11']);
+  assert.deepEqual([daily.start, daily.end], ['2026-10-11', '2026-11-11']);
   assert.deepEqual([env.med.calls[2].start, env.med.calls[2].end], ['2026-10-11', '2026-11-11']);
   const dates = dailyDates(env);
-  assert.equal(dates.length, 365);
+  assert.equal(dates.length, 31);
   assert.equal(dates.at(-1), '2026-11-10');
-  assert.equal(env.fake.publishedEnergyConsumption[0].intervals[0].kwh, 10);
+  const days = env.fake.states.filter(
+    (s) => s.device_feature_external_id === F('daily_consumption'),
+  );
+  assert.equal(days[0].state, 10, 'kWh');
+  assert.equal(days[0].created_at, '2026-10-10T22:00:00.000Z', 'the local midnight');
+  // The days never feed the costs: no dated consumption without the load curve.
+  assert.equal(env.fake.publishedEnergyConsumption.length, 0);
+  assert.match(statusText(env), /No cost is computed/);
   const peaks = env.fake.states.filter((s) => s.device_feature_external_id === F('max_power'));
   assert.equal(peaks.length, 31);
   assert.equal(peaks.at(-1).created_at, '2026-11-10T17:42:13.000Z');
@@ -116,7 +130,7 @@ test('a created device: read a minute later, a year of days; every day published
   const next = env.med.calls[4];
   assert.deepEqual([next.start, next.end], ['2026-11-11', '2026-11-12']);
   const all = dailyDates(env);
-  assert.equal(all.length, 366);
+  assert.equal(all.length, 32);
   assert.equal(new Set(all).size, all.length, 'no day published twice');
   const at = new Date(env.med.calls[3].at);
   const minutes = at.getUTCHours() * 60 + at.getUTCMinutes() + 60;
@@ -193,6 +207,7 @@ test('a restart never reads sooner than an hour, nor what was read today', async
   });
   t.after(() => later.app.stop());
   await later.wait(12 * HOUR);
+  assert.deepEqual(env.med.ops(), ['contracts', 'daily', 'maxPower']);
   assert.equal(env.med.calls.length, sent);
   assert.match(statusText(later), /^Starting: 1 meter\(s\), first read on 12\/11 (09|10):/);
   await later.app.stop();
@@ -434,13 +449,13 @@ test('options: the load curve (7 days of half hours) and the production (dated s
   const [device] = env.fake.discoveredDevices;
   assert.deepEqual(
     device.features.map((f) => f.external_id.split(':').at(-1)),
-    ['consumption', 'max_power', 'daily_production'],
-    'the half hours replace the days: a consumption is never priced twice',
+    ['daily_consumption', 'consumption', 'max_power', 'daily_production'],
+    'the days shown, the half hours priced',
   );
   await createAll(env);
   await env.wait(2 * MINUTE);
-  assert.deepEqual(env.med.ops(), ['contracts', 'curve', 'maxPower', 'production']);
-  const curve = env.med.calls[1];
+  assert.deepEqual(env.med.ops(), ['contracts', 'daily', 'curve', 'maxPower', 'production']);
+  const curve = env.med.calls[2];
   assert.deepEqual([curve.start, curve.end], ['2026-11-04', '2026-11-11']);
   const halves = env.fake.publishedEnergyConsumption
     .filter((b) => b.device_feature_external_id === F('consumption'))
@@ -454,6 +469,12 @@ test('options: the load curve (7 days of half hours) and the production (dated s
   assert.equal(production.length, 31);
   assert.equal(production.at(-1).created_at, '2026-11-09T23:00:00.000Z', 'the local midnight');
   assert.equal(production[0].state, 3);
+  // Only the half hours go to the costs.
+  assert.deepEqual(
+    [...new Set(env.fake.publishedEnergyConsumption.map((b) => b.device_feature_external_id))],
+    [F('consumption')],
+  );
+  assert.doesNotMatch(statusText(env), /No cost/);
 });
 
 test('states throttled: never more than 250 a minute', async (t) => {
@@ -492,7 +513,7 @@ test('states throttled: never more than 250 a minute', async (t) => {
 });
 
 test('Gladys refuses a publication: the days are asked again later, never lost', async (t) => {
-  const env = await started({ config: { ...CONFIG, max_power: false } });
+  const env = await started({ config: { ...CONFIG, max_power: false, load_curve: true } });
   t.after(() => env.app.stop());
   await createAll(env);
   const real = env.gladys.publishEnergyConsumption.bind(env.gladys);
@@ -502,13 +523,13 @@ test('Gladys refuses a publication: the days are asked again later, never lost',
     return real(...args);
   };
   await env.wait(2 * MINUTE);
-  assert.equal(env.store.data.published[KEY], undefined);
-  assert.match(statusText(env), /daily_gladys/);
+  assert.equal(env.store.data.published[KEY].curve, undefined);
+  assert.match(statusText(env), /curve_gladys/);
   fail = false;
   await env.wait(3 * HOUR);
-  assert.equal(env.med.count('daily'), 2);
-  assert.equal(env.med.calls.at(-1).start, '2025-11-11');
-  assert.equal(dailyDates(env).length, 365);
+  assert.equal(env.med.count('curve'), 2);
+  assert.equal(env.med.calls.at(-1).start, '2026-11-04');
+  assert.equal(dailyDates(env, F('consumption')).length, 7 * 48);
 });
 
 test('getConfig failing in connected: retried, spaced, the status says so, then the reads', async (t) => {
@@ -584,22 +605,23 @@ test('the test button: at most once a minute; a quota reached is said', async (t
 test('an answer of an older generation publishes nothing', async (t) => {
   let release;
   const med = createMed({
-    daily: (call) =>
+    curve: (call) =>
       new Promise((resolve) => {
-        release = () => resolve(M.daily(call));
+        release = () => resolve(M.curve(call));
       }),
   });
-  const env = await started({ med, config: { ...CONFIG, max_power: false } });
+  const config = { ...CONFIG, max_power: false, load_curve: true };
+  const env = await started({ med, config });
   t.after(() => env.app.stop());
   await createAll(env);
   await env.wait(2 * MINUTE);
-  assert.equal(med.count('daily'), 1);
+  assert.equal(med.count('curve'), 1);
   // The user saves another meter meanwhile.
-  await env.fake.configUpdated({ ...CONFIG, max_power: false, usage_points: M.PDL2 });
+  await env.fake.configUpdated({ ...config, usage_points: M.PDL2 });
   release();
   await env.wait(1000);
-  assert.equal(dailyDates(env).length, 0);
-  assert.equal(env.store.data.published[KEY], undefined);
+  assert.equal(dailyDates(env, F('consumption')).length, 0);
+  assert.equal(env.store.data.published[KEY]?.curve, undefined);
 });
 
 test('stop: the request in flight aborted, nothing sent after, no timer left', async () => {
@@ -638,7 +660,7 @@ const TEMPLATE_CONTRACT = {
   status: 'active',
 };
 
-test('I1: without the load curve, a peak / off-peak contract holds the daily consumption', async (t) => {
+test('r2: the days are shown only; with the template but no curve, no cost at all', async (t) => {
   const env = await started({
     config: { ...CONFIG, max_power: false },
     contracts: [TEMPLATE_CONTRACT],
@@ -646,36 +668,44 @@ test('I1: without the load curve, a peak / off-peak contract holds the daily con
   t.after(() => env.app.stop());
   await createAll(env);
   await env.wait(2 * MINUTE);
-  assert.equal(env.med.count('daily'), 0, 'not even asked');
-  assert.equal(dailyDates(env).length, 0, 'never one point a day for an HP/HC contract');
-  assert.match(statusText(env), /needs the 30-minute load curve: the daily consumption is held/);
-  // The contract ended: the days are read and published again.
-  env.fake.energyContracts = [{ ...TEMPLATE_CONTRACT, valid_to: '2026-11-10' }];
-  await env.wait(DAY);
-  assert.equal(dailyDates(env).length, 365);
-  assert.doesNotMatch(statusText(env), /held/);
+  assert.equal(dailyDates(env).length, 31, 'the days are published as dated states');
+  assert.equal(env.fake.publishedEnergyConsumption.length, 0, 'nothing for the costs');
+  const [device] = env.fake.discoveredDevices;
+  const day = device.features.find((f) => f.external_id === F('daily_consumption'));
+  assert.deepEqual([day.category, day.type], ['energy-sensor', 'index-yesterday']);
+  assert.match(statusText(env), /No cost is computed: only the 30-minute load curve/);
 });
 
-test('I1: the contracts not readable from Gladys: the days held, never guessed', async (t) => {
+test('r2: ticking then unticking the load curve removes no feature and loses no day', async (t) => {
   const env = await started({ config: { ...CONFIG, max_power: false } });
   t.after(() => env.app.stop());
-  env.gladys.getEnergyContracts = () => Promise.reject(new Error('down'));
   await createAll(env);
   await env.wait(2 * MINUTE);
-  assert.equal(dailyDates(env).length, 0);
-});
-
-test('I1: with the load curve, the half hours only (no daily feature to price)', async (t) => {
-  const env = await started({
-    config: { ...CONFIG, load_curve: true, max_power: false },
-    contracts: [TEMPLATE_CONTRACT],
-  });
-  t.after(() => env.app.stop());
+  const feats = () =>
+    env.fake.discoveredDevices[0].features.map((f) => f.external_id.split(':').at(-1));
+  // Ticked: the half hours are offered on top of the days.
+  await env.fake.configUpdated({ ...CONFIG, max_power: false, load_curve: true });
+  await env.wait(MINUTE);
+  assert.deepEqual(feats(), ['daily_consumption', 'consumption']);
+  assert.match(statusText(env), /update the device in Discovery/);
+  // Not updated yet: the days go on, the next morning too.
+  await env.wait(DAY);
+  assert.equal(dailyDates(env).at(-1), '2026-11-11');
+  // Updated: the half hours are read (7 days back), the days go on.
   await createAll(env);
   await env.wait(2 * MINUTE);
-  assert.deepEqual(env.med.ops(), ['contracts', 'curve']);
   assert.equal(dailyDates(env, F('consumption')).length, 7 * 48);
-  assert.doesNotMatch(statusText(env), /held/);
+  assert.doesNotMatch(statusText(env), /update the device/);
+  // Unticked: the half-hour feature stays offered (an update never removes it).
+  await env.fake.configUpdated({ ...CONFIG, max_power: false });
+  await env.wait(MINUTE);
+  assert.deepEqual(feats(), ['daily_consumption', 'consumption']);
+  await env.wait(DAY);
+  const days = dailyDates(env);
+  assert.equal(new Set(days).size, days.length, 'each day once');
+  // Every day from the first one to yesterday: none lost.
+  assert.equal(days.length, 33);
+  assert.equal(days.at(-1), '2026-11-12');
 });
 
 test('I3: a day missing in the middle is asked again, never skipped', async (t) => {
@@ -699,22 +729,22 @@ test('I3: a day missing in the middle is asked again, never skipped', async (t) 
   await env.wait(3 * HOUR);
   assert.deepEqual([med.calls.at(-1).start, med.calls.at(-1).end], ['2026-11-08', '2026-11-11']);
   const dates = dailyDates(env);
-  assert.equal(dates.length, 365);
-  assert.equal(new Set(dates).size, 365, 'each day once');
+  assert.equal(dates.length, 31);
+  assert.equal(new Set(dates).size, 31, 'each day once');
   assert.ok(dates.includes('2026-11-08'));
 });
 
 test('I3: a day missing for more than 5 days is given up', async (t) => {
   const med = createMed({
     daily: ({ pdl, start, end }) =>
-      M.daily({ pdl, start, end, value: (d, i) => (d === '2026-06-01' ? undefined : 1000 + i) }),
+      M.daily({ pdl, start, end, value: (d, i) => (d === '2026-10-20' ? undefined : 1000 + i) }),
   });
   const env = await started({ med, config: { ...CONFIG, max_power: false } });
   t.after(() => env.app.stop());
   await createAll(env);
   await env.wait(2 * MINUTE);
   assert.equal(env.store.data.published[KEY].daily, '2026-11-10');
-  assert.equal(dailyDates(env).length, 364);
+  assert.equal(dailyDates(env).length, 30);
 });
 
 test('I4: a 5xx on a route of one meter never stops the other routes and meters', async (t) => {
@@ -752,21 +782,6 @@ test('I4: the only route left in 5xx waits on its own: 3 reads a day, no pause o
   assert.equal(med.count('maxPower'), 1);
 });
 
-test('I1: a device made before the load curve option: its daily feature is not read', async (t) => {
-  const env = await started({ config: { ...CONFIG, load_curve: true, max_power: false } });
-  t.after(() => env.app.stop());
-  const [device] = structuredClone(env.fake.discoveredDevices);
-  device.features.push({
-    ...device.features[0],
-    name: 'Daily consumption',
-    external_id: F('daily_consumption'),
-    type: 'daily-consumption',
-  });
-  await env.fake.deviceCreated(device);
-  await env.wait(2 * MINUTE);
-  assert.deepEqual(env.med.ops(), ['contracts', 'curve']);
-});
-
 test('I2: dated states by batches of 100 at most', async (t) => {
   const env = await started({ config: { ...CONFIG, production: true } });
   t.after(() => env.app.stop());
@@ -798,7 +813,7 @@ test('I5: the devices not read from Gladys at start: retried, the status says so
   assert.match(statusText(env), /devices could not be read from Gladys/);
   assert.equal(env.fake.connectionStatus.connected, false);
   await env.wait(2 * MINUTE);
-  assert.equal(dailyDates(env).length, 365);
+  assert.equal(dailyDates(env).length, 31);
   assert.doesNotMatch(statusText(env), /devices could not be read/);
 });
 
@@ -809,6 +824,9 @@ test('I6: a fixed PDL lifts the refusal (same token)', async (t) => {
   const env = await started({ med, config: { ...CONFIG, usage_points: M.PDL2 } });
   t.after(() => env.app.stop());
   assert.match(statusText(env), /refused/);
+  // Even when the 8 bits kept of the refused meter list match the new one.
+  const { tagOf } = await import('../src/app.js');
+  env.app.refused.pdlTag = tagOf(env.app.refused.salt, `pdl\u0000${M.PDL}`);
   await env.fake.configUpdated({ ...CONFIG });
   await env.wait(2 * MINUTE);
   assert.equal(med.calls.filter((c) => c.pdl === M.PDL).length, 1);
@@ -1009,4 +1027,108 @@ test('M6: the calendar Gladys did not take is published again without a request'
   assert.equal(env.fake.publishedEnergyCalendars.length, 1);
   assert.equal(env.med.calls.length, 1);
   assert.match(statusText(env), /calendar published up to 17\/11\/2026/);
+});
+
+// --- Review r2 -------------------------------------------------------------------
+
+test('M8: a slow /data write that lands is not an unwritable /data', async (t) => {
+  const store = createMemoryStore();
+  const held = [];
+  const save = store.save.bind(store);
+  store.save = (data) => new Promise((resolve) => held.push(() => save(data).then(resolve)));
+  const env = await setup({ store });
+  registerHandlers(env.gladys, env.app, env.app.log);
+  t.after(() => env.app.stop());
+  env.app.connected();
+  await env.wait(5 * 1000);
+  for (const done of held.splice(0)) await done();
+  await env.wait(1000);
+  assert.equal(env.app.storeState, 'ok');
+  // Writes land from now on, quickly.
+  store.save = save;
+  await env.wait(2 * MINUTE);
+  assert.equal(env.med.count('contracts'), 1, 'the first read is not delayed by an hour');
+  assert.doesNotMatch(statusText(env), /cannot be read or written/);
+});
+
+test('M9: a route in 5xx waits; the next read announced is the real one', async (t) => {
+  let fail = true;
+  const med = createMed({
+    daily: (call) => (fail ? json({}, 503) : defaults.daily(call)),
+  });
+  const env = await started({ med, config: { ...CONFIG, max_power: false } });
+  t.after(() => env.app.stop());
+  await createAll(env);
+  await env.wait(2 * MINUTE);
+  assert.equal(med.count('daily'), 1);
+  assert.equal(env.app.pause, undefined);
+  // A wait longer than the ordinary retry (doubled several times): the read waits for it.
+  const key = [...env.app.backoff.keys()][0];
+  env.app.backoff.set(key, { count: 5, due: env.app.monotonic() + 5 * HOUR });
+  env.app.schedule(env.app.gen);
+  await env.app.report();
+  const announced = /next read on (\d\d\/\d\d \d\d:\d\d)/.exec(statusText(env))?.[1];
+  fail = false;
+  await env.wait(4 * HOUR + 50 * MINUTE);
+  assert.equal(med.count('daily'), 1, 'not before the wait of the route');
+  await env.wait(20 * MINUTE);
+  assert.equal(med.count('daily'), 2);
+  const t2 = med.calls.filter((c) => c.op === 'daily')[1].at;
+  const { dayClock } = await import('../src/time.js');
+  const minuteAfter = dayClock(t2 + MINUTE);
+  assert.ok([dayClock(t2), minuteAfter].includes(announced), `${announced} vs ${dayClock(t2)}`);
+  // A success lifts the wait of the route: a later 5xx starts again at 15 minutes.
+  assert.equal(env.app.backoff.size, 0);
+  fail = true;
+  for (let i = 0; i < 30 && med.count('daily') < 3; i += 1) await env.wait(HOUR);
+  assert.equal(med.count('daily'), 3);
+  assert.equal(env.app.backoff.values().next().value.count, 1);
+});
+
+test('M12: meter numbers changed while stopped lift a refusal', async (t) => {
+  const store = createMemoryStore();
+  const med = createMed({
+    contracts: ({ pdl }) => (pdl === M.PDL2 ? json({}, 403) : M.contracts({ pdl })),
+  });
+  const env = await started({ med, store, config: { ...CONFIG, usage_points: M.PDL2 } });
+  assert.ok(store.data.refused);
+  await env.app.stop();
+  const later = await started({ med, store, now: env.clock.now + HOUR });
+  t.after(() => later.app.stop());
+  await later.wait(3 * HOUR);
+  assert.equal(med.calls.filter((c) => c.pdl === M.PDL).length, 1);
+  // The same wrong meter after a restart stays refused.
+  await later.app.stop();
+  const same = await started({
+    med,
+    store: createMemoryStore({ keyTag: TAG, refused: store.data.refused }),
+    now: env.clock.now + 2 * HOUR,
+    config: { ...CONFIG, usage_points: M.PDL2 },
+  });
+  t.after(() => same.app.stop());
+  await same.wait(DAY);
+  assert.equal(med.calls.filter((c) => c.pdl === M.PDL2).length, 1);
+});
+
+test('M13: Test pressed while a read waits for a 429: "nothing sent"', async (t) => {
+  let release;
+  const med = createMed({
+    contracts: () =>
+      new Promise((resolve) => {
+        release = () => resolve(json({}, 429, { 'retry-after': '3600' }));
+      }),
+  });
+  const env = await setup({ med });
+  registerHandlers(env.gladys, env.app, env.app.log);
+  t.after(() => env.app.stop());
+  env.app.connected();
+  await env.wait(1000);
+  assert.equal(med.count('contracts'), 1);
+  const reply = env.fake.action('test_connection');
+  await env.wait(1000);
+  release();
+  await env.wait(1000);
+  const answer = await reply;
+  assert.match(answer.data.message.en, /^Not sent: MyElectricalData asked to wait/);
+  assert.equal(med.count('access'), 0);
 });

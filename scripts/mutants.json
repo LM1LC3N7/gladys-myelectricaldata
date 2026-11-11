@@ -332,8 +332,8 @@
   {
     "name": "refusal persisted without salt check (tag compare dropped)",
     "file": "src/app.js",
-    "from": "      this.refused.tag === tagOf(this.refused.salt, this.token),",
-    "to": "      true,"
+    "from": "      this.refused.tag === tagOf(this.refused.salt, this.token) &&",
+    "to": "      true &&"
   },
   {
     "name": "states chunk not bounded to the room",
@@ -346,24 +346,6 @@
     "file": "src/med/model.js",
     "from": "kwh: Math.round(s.wh * 1000) / 1e6",
     "to": "kwh: Math.round(s.wh * 1000) / 1e3"
-  },
-  {
-    "name": "daily not held for an HP/HC contract",
-    "file": "src/app.js",
-    "from": "      if (kind === 'daily' && this.templateInUse) continue;",
-    "to": ""
-  },
-  {
-    "name": "contracts unreadable: days published",
-    "file": "src/app.js",
-    "from": "      this.templateInUse = true;\n    }",
-    "to": "      this.templateInUse = false;\n    }"
-  },
-  {
-    "name": "daily and curve both",
-    "file": "src/app.js",
-    "from": "    if (kind === 'daily' && this.config.loadCurve) return false;",
-    "to": ""
   },
   {
     "name": "hole skipped",
@@ -448,5 +430,77 @@
     "file": "src/app.js",
     "from": "        this.refreshCreated(gen)\n          .then((ok) => {",
     "to": "        Promise.resolve(false)\n          .then((ok) => {"
+  },
+  {
+    "name": "route backoff never lifted by a success",
+    "file": "src/app.js",
+    "from": "        this.backoff.delete(`${meter.key}:${task}`);\n",
+    "to": ""
+  },
+  {
+    "name": "devices read again but no read scheduled",
+    "file": "src/app.js",
+    "from": "            this.soon = true;\n            this.schedule(gen);",
+    "to": "            this.schedule(gen);"
+  },
+  {
+    "name": "Test in a pause reported as a meter failure",
+    "file": "src/app.js",
+    "from": "        if (code === 'paused') return both('testPaused', { time: dayClock(this.pause.until) });\n",
+    "to": ""
+  },
+  {
+    "name": "hole given up at once",
+    "file": "src/app.js",
+    "from": "      else if (d >= shiftDate(today, -HOLE_WAIT_DAYS)) break;",
+    "to": "      else if (false) break;"
+  },
+  {
+    "name": "days fed to the costs",
+    "file": "src/devices.js",
+    "from": "      T.ENERGY_SENSOR.INDEX_YESTERDAY,",
+    "to": "      T.ENERGY_SENSOR.DAILY_CONSUMPTION,"
+  },
+  {
+    "name": "Discovery drops created features",
+    "file": "src/app.js",
+    "from": "        device.features.push(feature);",
+    "to": ""
+  },
+  {
+    "name": "PDL tag of the refusal ignored",
+    "file": "src/app.js",
+    "from": "      (this.refused.pdlTag === undefined ||",
+    "to": "      (true ||"
+  },
+  {
+    "name": "route wait ignored in the planning",
+    "file": "src/app.js",
+    "from": "      if (waits.length) due = Math.max(due, Math.min(...waits));",
+    "to": ""
+  },
+  {
+    "name": "slow write marks /data unwritable",
+    "file": "src/app.js",
+    "from": "      return (await this.bounded(done, STORE_WAIT)) === true;",
+    "to": "      const ok = (await this.bounded(done, STORE_WAIT)) === true;\n      if (!ok) this.storeState = 'unwritable';\n      return ok;"
+  },
+  {
+    "name": "429 not applied before the queue goes on",
+    "file": "src/med/client.js",
+    "from": "        this.onError?.(err);",
+    "to": ""
+  },
+  {
+    "name": "missing feature not said",
+    "file": "src/app.js",
+    "from": "    if (missing.length) add('updateDevice'",
+    "to": "    if (false) add('updateDevice'"
+  },
+  {
+    "name": "no-cost not said",
+    "file": "src/app.js",
+    "from": "    if (!this.config.loadCurve) add('noCost');",
+    "to": ""
   }
 ]
