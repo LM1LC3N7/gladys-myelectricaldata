@@ -10,6 +10,8 @@ the notes of the version's GitHub Release.
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-11-11
+
 ### Added
 
 - First version: the Linky meters (PDL) read through the public API of the
@@ -27,3 +29,6 @@ the notes of the version's GitHub Release.
   day at most), at most 12 requests per meter and per day counted in `/data`
   before each request, pauses on 429 and 5xx kept across a restart.
 - A test button checking the access, consent and quota of every meter.
+
+[Unreleased]: https://github.com/LM1LC3N7/gladys-myelectricaldata/compare/v0.1.1...HEAD
+[0.1.1]: https://github.com/LM1LC3N7/gladys-myelectricaldata/releases/tag/v0.1.1

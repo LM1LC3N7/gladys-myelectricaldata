@@ -1,6 +1,6 @@
 {
   "name": "gladys-myelectricaldata",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "description": "Linky meters for Gladys Assistant through the MyElectricalData community gateway: daily and 30-minute consumption, production, daily peak power, and a peak / off-peak contract template fed with the real off-peak hours of the meter. Read-only. Unofficial, not affiliated with Enedis nor MyElectricalData.",
   "type": "module",
