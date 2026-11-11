@@ -502,5 +502,41 @@
     "file": "src/app.js",
     "from": "    if (!this.config.loadCurve) add('noCost');",
     "to": ""
+  },
+  {
+    "name": "global pause keeps the route backoffs (r2 #6)",
+    "file": "src/app.js",
+    "from": "        this.backoff.clear();\n",
+    "to": ""
+  },
+  {
+    "name": "a 429 doubled twice (applied in the session and again)",
+    "file": "src/app.js",
+    "from": "    if (err.pauseApplied) return;\n",
+    "to": ""
+  },
+  {
+    "name": "daily catch-up after a stop not bounded to 92 days",
+    "file": "src/app.js",
+    "from": "  daily: BACKFILL_DAYS,",
+    "to": "  daily: 365,"
+  },
+  {
+    "name": "first daily fill 92 days instead of 31",
+    "file": "src/app.js",
+    "from": "  daily: STATE_BACKFILL_DAYS,",
+    "to": "  daily: BACKFILL_DAYS,"
+  },
+  {
+    "name": "unwritable /data never back to ok",
+    "file": "src/app.js",
+    "from": "          if (this.storeState === 'unwritable') this.storeState = 'ok';\n",
+    "to": ""
+  },
+  {
+    "name": "day feature priced (daily-consumption type)",
+    "file": "src/devices.js",
+    "from": "      T.ENERGY_SENSOR.INDEX_YESTERDAY,",
+    "to": "      T.ENERGY_SENSOR.DAILY_CONSUMPTION,"
   }
 ]

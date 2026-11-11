@@ -1132,3 +1132,62 @@ test('M13: Test pressed while a read waits for a 429: "nothing sent"', async (t)
   assert.match(answer.data.message.en, /^Not sent: MyElectricalData asked to wait/);
   assert.equal(med.count('access'), 0);
 });
+
+// --- Review r3 -------------------------------------------------------------------
+
+test('M14: one 429 without Retry-After pauses 1 hour, applied once', async (t) => {
+  const med = createMed({ contracts: () => json({ detail: 'quota' }, 429) });
+  const env = await started({ med });
+  t.after(() => env.app.stop());
+  assert.equal(env.store.data.pause.count, 1);
+  assert.equal(env.store.data.pause.until - env.clock.now, HOUR);
+});
+
+test('M14: the energy of the days is caught up 92 days back at most after a stop', async (t) => {
+  const store = createMemoryStore({
+    keyTag: TAG,
+    published: { [KEY]: { daily: '2026-06-01' } },
+  });
+  const env = await started({ store, config: { ...CONFIG, max_power: false } });
+  t.after(() => env.app.stop());
+  await createAll(env);
+  await env.wait(2 * MINUTE);
+  const daily = env.med.calls.find((c) => c.op === 'daily');
+  assert.deepEqual([daily.start, daily.end], ['2026-08-11', '2026-11-11']);
+});
+
+test('M14: /data writable again goes back to ok', async (t) => {
+  const store = createMemoryStore();
+  store.failSave = true;
+  const env = await started({ store });
+  t.after(() => env.app.stop());
+  assert.equal(env.app.storeState, 'unwritable');
+  store.failSave = false;
+  await env.wait(61 * MINUTE);
+  assert.equal(env.app.storeState, 'ok');
+  assert.doesNotMatch(statusText(env), /cannot be read or written/);
+});
+
+test('M14: a global pause lifts the waits of the routes (read again with the rest)', async (t) => {
+  let down = false;
+  const med = createMed({
+    contracts: (call) => (down ? json({}, 503) : defaults.contracts(call)),
+  });
+  const env = await started({ med, config: { ...CONFIG, max_power: false } });
+  t.after(() => env.app.stop());
+  await createAll(env);
+  await env.wait(2 * MINUTE);
+  assert.equal(med.count('daily'), 1);
+  // The next morning: the day route still waits an hour (failed 3 times alone),
+  // and the gateway is down for the first read.
+  const next = env.app.roundAt('2026-11-12');
+  await env.wait(next - env.clock.now - MINUTE);
+  env.app.backoff.set(`${KEY}:daily`, { count: 3, due: env.app.monotonic() + 3 * HOUR });
+  down = true;
+  await env.wait(2 * MINUTE);
+  assert.equal(med.count('contracts'), 2);
+  assert.ok(env.app.pause);
+  down = false;
+  await env.wait(20 * MINUTE);
+  assert.equal(med.count('daily'), 2, 'read at the end of the pause, not 3 hours later');
+});
