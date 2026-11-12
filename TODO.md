@@ -2,15 +2,15 @@
 
 ## Before announcing
 
-- [ ] Test on a real Gladys 5.2+ with a real Linky meter and a MyElectricalData
+- [ ] Test on a real Gladys 5.3+ with a real Linky meter and a MyElectricalData
       token: Test button, Discovery, the 31 days of energy per day, a contract
       from the template priced with the calendar, a day later.
 - [ ] Turn on "Private vulnerability reporting" (SECURITY.md points there).
 - [ ] Add the `gladys-assistant-integration` topic to publish in the store
       (after the first release: the store validator needs the GHCR image).
-- [ ] Store fields left out of the manifest on purpose (Louis' rule):
-      `countries: ["FR"]`, keywords `linky`, `enedis`, `heures creuses`,
-      `myelectricaldata`.
+- [ ] Store fields left out of the manifest on purpose (Louis' rule): keywords
+      `linky`, `enedis`, `heures creuses`, `myelectricaldata`. The countries
+      are declared (`FR`).
 
 ## To confirm on a real meter (built from the Swagger only)
 
@@ -64,4 +64,5 @@
   every created feature (options never remove one). A 5xx on one route waits
   for that route only; the gateway is paused when nothing answered and several
   routes (or a contract) failed. Dated states by batches of 100.
-- Gladys `>=5.2.0` (publishEnergyConsumption and the energy contracts).
+- Gladys `>=5.3.0` (the catalog countries; publishEnergyConsumption and the
+  energy contracts need 5.2.0).
